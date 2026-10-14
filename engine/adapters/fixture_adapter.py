@@ -205,9 +205,25 @@ class FixtureHistoryAdapter(HistoryPort):
 
     def __init__(self) -> None:
         raw = _load_json(_FIXTURES_DIR / "history.json", _FALLBACK_HISTORY)
-        self._tickets: list[dict] = raw.get("tickets", _FALLBACK_HISTORY["tickets"])
+        raw_tickets = raw.get("tickets") or raw.get("incidents") or _FALLBACK_HISTORY["tickets"]
+        self._tickets: list[dict] = []
+        for t in raw_tickets:
+            item = dict(t)
+            if "id" not in item:
+                item["id"] = item.get("incident_id", item.get("ticket_id", "INC-UNKNOWN"))
+            self._tickets.append(item)
+
         self._known_errors: list[dict] = raw.get("known_errors", _FALLBACK_HISTORY["known_errors"])
-        self._changes: list[dict] = raw.get("changes", _FALLBACK_HISTORY["changes"])
+
+        raw_changes = raw.get("changes", _FALLBACK_HISTORY["changes"])
+        self._changes: list[dict] = []
+        for c in raw_changes:
+            item = dict(c)
+            if "modules_affected" not in item:
+                item["modules_affected"] = item.get("files_changed", [])
+            if "files_changed" not in item:
+                item["files_changed"] = item.get("modules_affected", [])
+            self._changes.append(item)
 
     def similar_tickets(self, query: str, limit: int = 5) -> list[dict[str, Any]]:
         """Simple keyword match — specialist agent's LLM handles semantic ranking."""
