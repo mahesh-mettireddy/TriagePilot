@@ -1,0 +1,685 @@
+"""
+engine/agents/specialists.py
+-----------------------------
+The 5 specialist sub-agents that run in parallel during Step 3 of the pipeline.
+
+Each agent:
+  1. Receives the TicketDTO, AgentRoutingPlan, and its concrete port adapter.
+  2. Queries the port to gather raw evidence.
+  3. Constructs typed EvidenceCard objects (verification.status = PENDING — 
+     the Verifier in Phase 4 will mark them VERIFIED or DROPPED).
+  4. Returns a list[EvidenceCard].
+
+Concurrency:
+  run_active_agents() uses asyncio.gather to run all ACTIVE agents in parallel.
+  Skipped agents emit an "agent_skipped" SSEEvent via the optional event_queue.
+
+Event streaming:
+  Pass an asyncio.Queue[SSEEvent] to run_active_agents().  Each agent puts
+  events on the queue as they arrive.  The API layer (api/sse.py) drains
+  this queue to the client.  If no queue is provided, events are discarded.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import uuid
+from datetime import datetime, timezone
+from typing import Any, AsyncGenerator, Optional
+
+from engine.ports.base import (
+    CodePort,
+    HistoryPort,
+    KnowledgePort,
+    LogPort,
+    RecordPort,
+)
+from engine.schemas import (
+    AgentRoutingPlan,
+    EvidenceCard,
+    SourceType,
+    Stance,
+    SSEEvent,
+    TicketDTO,
+    VerificationResult,
+    VerificationStatus,
+)
+
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _card_id(prefix: str, counter: list[int]) -> str:
+    """Generate a deterministic card ID like HIST-001."""
+    counter[0] += 1
+    return f"{prefix}-{counter[0]:03d}"
+
+
+def _make_event(seq_counter: list[int], event_type: str, data: dict[str, Any]) -> SSEEvent:
+    seq_counter[0] += 1
+    return SSEEvent(seq=seq_counter[0], ts=_utc_now(), type=event_type, data=data)
+
+
+def _pending_card(**kwargs: Any) -> EvidenceCard:
+    """Create an EvidenceCard with PENDING verification status."""
+    return EvidenceCard(
+        verification=VerificationResult(status=VerificationStatus.PENDING),
+        **kwargs,
+    )
+
+
+# ---------------------------------------------------------------------------
+# HistoryAgent
+# ---------------------------------------------------------------------------
+
+class HistoryAgent:
+    """
+    Queries similar past tickets, known errors, and recent change records.
+    Returns EvidenceCards from each data source.
+    """
+
+    PREFIX = "HIST"
+
+    def __init__(self, port: HistoryPort) -> None:
+        self._port = port
+
+    async def run(
+        self,
+        ticket: TicketDTO,
+        plan: AgentRoutingPlan,
+        seq: list[int],
+        queue: Optional[asyncio.Queue],
+    ) -> list[EvidenceCard]:
+        counter: list[int] = [0]
+        cards: list[EvidenceCard] = []
+        text = ticket.masked_text or ticket.text
+
+        await _emit(queue, _make_event(seq, "tool_started", {
+            "agent": "HistoryAgent", "tool": "similar_tickets"
+        }))
+
+        # 1. Similar past tickets
+        try:
+            similar = await asyncio.get_event_loop().run_in_executor(
+                None, lambda: self._port.similar_tickets(text, limit=3)
+            )
+            for t in similar:
+                card = _pending_card(
+                    card_id=_card_id(self.PREFIX, counter),
+                    specialist="HistoryAgent",
+                    source_type=SourceType.TICKET,
+                    pointer={"system": "ServiceDesk", "id": t.get("id", "?"), "field": "resolution"},
+                    snippet=(t.get("resolution") or t.get("title", ""))[:400],
+                    claim=f"Past ticket {t.get('id')} resolved as: {t.get('ticket_class', 'UNKNOWN')}",
+                    stance=Stance.CONTEXT,
+                    observed_at=t.get("resolved_at"),
+                )
+                cards.append(card)
+                await _emit(queue, _make_event(seq, "card_added", {"card_id": card.card_id, "agent": "HistoryAgent"}))
+        except Exception as exc:
+            logger.warning("HistoryAgent.similar_tickets failed: %s", exc)
+
+        await _emit(queue, _make_event(seq, "tool_finished", {
+            "agent": "HistoryAgent", "tool": "similar_tickets", "cards": len(cards)
+        }))
+        await _emit(queue, _make_event(seq, "tool_started", {
+            "agent": "HistoryAgent", "tool": "known_errors"
+        }))
+
+        # 2. Known errors
+        try:
+            known = await asyncio.get_event_loop().run_in_executor(
+                None, lambda: self._port.known_errors(text)
+            )
+            for ke in known[:2]:
+                card = _pending_card(
+                    card_id=_card_id(self.PREFIX, counter),
+                    specialist="HistoryAgent",
+                    source_type=SourceType.TICKET,
+                    pointer={"system": "KnowledgeBase", "id": ke.get("ke_id", "?"), "field": "workaround"},
+                    snippet=(ke.get("workaround") or ke.get("symptoms", ""))[:400],
+                    claim=f"Known Error {ke.get('ke_id')}: {ke.get('title', '')}",
+                    stance=Stance.CONTEXT,
+                )
+                cards.append(card)
+                await _emit(queue, _make_event(seq, "card_added", {"card_id": card.card_id, "agent": "HistoryAgent"}))
+        except Exception as exc:
+            logger.warning("HistoryAgent.known_errors failed: %s", exc)
+
+        await _emit(queue, _make_event(seq, "tool_finished", {
+            "agent": "HistoryAgent", "tool": "known_errors", "cards": len(cards)
+        }))
+        await _emit(queue, _make_event(seq, "tool_started", {
+            "agent": "HistoryAgent", "tool": "recent_changes"
+        }))
+
+        # 3. Recent changes (last 14 days)
+        try:
+            from datetime import timedelta
+            now = datetime.now(timezone.utc)
+            window_start = (now - timedelta(days=14)).isoformat()
+            changes = await asyncio.get_event_loop().run_in_executor(
+                None, lambda: self._port.recent_changes(window_start, now.isoformat())
+            )
+            for chg in changes[:3]:
+                card = _pending_card(
+                    card_id=_card_id(self.PREFIX, counter),
+                    specialist="HistoryAgent",
+                    source_type=SourceType.TICKET,
+                    pointer={"system": "ITSM", "id": chg.get("change_id", "?"), "field": "deployed_at"},
+                    snippet=(
+                        f"{chg.get('change_id')} — {chg.get('title','')} "
+                        f"(deployed {chg.get('deployed_at','')}, "
+                        f"modules: {', '.join(chg.get('modules_affected',[]))})"
+                    )[:400],
+                    claim=f"Change {chg.get('change_id')} deployed affecting {chg.get('modules_affected', [])}",
+                    stance=Stance.CONTEXT,
+                    observed_at=chg.get("deployed_at"),
+                )
+                cards.append(card)
+                await _emit(queue, _make_event(seq, "card_added", {"card_id": card.card_id, "agent": "HistoryAgent"}))
+        except Exception as exc:
+            logger.warning("HistoryAgent.recent_changes failed: %s", exc)
+
+        await _emit(queue, _make_event(seq, "tool_finished", {
+            "agent": "HistoryAgent", "tool": "recent_changes", "cards": len(cards)
+        }))
+        return cards
+
+
+# ---------------------------------------------------------------------------
+# KnowledgeAgent
+# ---------------------------------------------------------------------------
+
+class KnowledgeAgent:
+    """Queries runbooks and architecture docs."""
+
+    PREFIX = "KNOW"
+
+    def __init__(self, port: KnowledgePort) -> None:
+        self._port = port
+
+    async def run(
+        self,
+        ticket: TicketDTO,
+        plan: AgentRoutingPlan,
+        seq: list[int],
+        queue: Optional[asyncio.Queue],
+    ) -> list[EvidenceCard]:
+        counter: list[int] = [0]
+        cards: list[EvidenceCard] = []
+        text = ticket.masked_text or ticket.text
+
+        await _emit(queue, _make_event(seq, "tool_started", {
+            "agent": "KnowledgeAgent", "tool": "search_docs"
+        }))
+
+        try:
+            docs = await asyncio.get_event_loop().run_in_executor(
+                None, lambda: self._port.search_docs(text, limit=4)
+            )
+            for doc in docs:
+                # Fetch the first section for the snippet
+                section_data = await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda d=doc: self._port.get_doc_section(
+                        d["page_id"], next(iter({}), "overview")
+                    ),
+                )
+                snippet = (
+                    section_data["content"][:400]
+                    if section_data
+                    else doc.get("summary", "")[:400]
+                )
+                card = _pending_card(
+                    card_id=_card_id(self.PREFIX, counter),
+                    specialist="KnowledgeAgent",
+                    source_type=SourceType.DOC,
+                    pointer={
+                        "space": doc.get("space", "KB"),
+                        "page_id": doc["page_id"],
+                        "section": "overview",
+                        "last_updated": doc.get("last_updated", ""),
+                    },
+                    snippet=snippet,
+                    claim=f"Doc {doc['page_id']}: {doc.get('title','')} (last updated {doc.get('last_updated','')})",
+                    stance=Stance.CONTEXT,
+                )
+                cards.append(card)
+                await _emit(queue, _make_event(seq, "card_added", {"card_id": card.card_id, "agent": "KnowledgeAgent"}))
+        except Exception as exc:
+            logger.warning("KnowledgeAgent.search_docs failed: %s", exc)
+
+        await _emit(queue, _make_event(seq, "tool_finished", {
+            "agent": "KnowledgeAgent", "tool": "search_docs", "cards": len(cards)
+        }))
+        return cards
+
+
+# ---------------------------------------------------------------------------
+# LogsAgent
+# ---------------------------------------------------------------------------
+
+class LogsAgent:
+    """Queries log events, error signatures, and trace lookups."""
+
+    PREFIX = "LOG"
+
+    def __init__(self, port: LogPort) -> None:
+        self._port = port
+
+    async def run(
+        self,
+        ticket: TicketDTO,
+        plan: AgentRoutingPlan,
+        seq: list[int],
+        queue: Optional[asyncio.Queue],
+    ) -> list[EvidenceCard]:
+        import re as _re
+        counter: list[int] = [0]
+        cards: list[EvidenceCard] = []
+        scenario_id = ticket.scenario_id or "S01"
+        entities = plan.extracted_entities
+
+        await _emit(queue, _make_event(seq, "tool_started", {
+            "agent": "LogsAgent", "tool": "query_logs"
+        }))
+
+        # 1. Query logs (ERROR level first for conciseness)
+        try:
+            logs = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: self._port.query_logs(
+                    scenario_id,
+                    filters={"level": "ERROR"},
+                    limit=5,
+                ),
+            )
+            for log in logs:
+                message = log.get("message", "")
+                # Check for prompt injection inside log lines
+                from engine.masking import detect_prompt_injection
+                inj, _ = detect_prompt_injection(message)
+                stance = Stance.CONTRADICTS if inj else Stance.SUPPORTS
+
+                card = _pending_card(
+                    card_id=_card_id(self.PREFIX, counter),
+                    specialist="LogsAgent",
+                    source_type=SourceType.LOG,
+                    pointer={
+                        "log_id": log.get("log_id", "?"),
+                        "ts": log.get("ts", ""),
+                        "service": log.get("service", ""),
+                    },
+                    snippet=message[:400],
+                    claim=(
+                        f"ERROR in {log.get('service')} at {log.get('ts')}: "
+                        f"{message[:80]}"
+                    ),
+                    stance=stance,
+                    observed_at=log.get("ts"),
+                )
+                cards.append(card)
+                await _emit(queue, _make_event(seq, "card_added", {"card_id": card.card_id, "agent": "LogsAgent"}))
+        except Exception as exc:
+            logger.warning("LogsAgent.query_logs failed: %s", exc)
+
+        await _emit(queue, _make_event(seq, "tool_finished", {
+            "agent": "LogsAgent", "tool": "query_logs", "cards": len(cards)
+        }))
+        await _emit(queue, _make_event(seq, "tool_started", {
+            "agent": "LogsAgent", "tool": "digest_signatures"
+        }))
+
+        # 2. Error signature digest
+        try:
+            sigs = await asyncio.get_event_loop().run_in_executor(
+                None, lambda: self._port.digest_signatures(scenario_id)
+            )
+            for sig in sigs[:2]:
+                card = _pending_card(
+                    card_id=_card_id(self.PREFIX, counter),
+                    specialist="LogsAgent",
+                    source_type=SourceType.LOG,
+                    pointer={
+                        "log_id": sig.get("sample_log_id", "?"),
+                        "ts": sig.get("first_seen", ""),
+                        "service": "digest",
+                    },
+                    snippet=(
+                        f"Error signature '{sig.get('signature','')}' "
+                        f"seen {sig.get('count', 1)}x "
+                        f"(first: {sig.get('first_seen','')}, last: {sig.get('last_seen','')})"
+                    )[:400],
+                    claim=f"Recurring error pattern: '{sig.get('signature','')}' ({sig.get('count',1)} occurrences)",
+                    stance=Stance.SUPPORTS,
+                    observed_at=sig.get("first_seen"),
+                )
+                cards.append(card)
+                await _emit(queue, _make_event(seq, "card_added", {"card_id": card.card_id, "agent": "LogsAgent"}))
+        except Exception as exc:
+            logger.warning("LogsAgent.digest_signatures failed: %s", exc)
+
+        # 3. Trace lookup if trace IDs / TXN IDs in entities
+        txn_ids = entities.get("transaction_ids", [])
+        if txn_ids:
+            await _emit(queue, _make_event(seq, "tool_started", {
+                "agent": "LogsAgent", "tool": "trace_lookup"
+            }))
+            try:
+                # Use the first TXN ID as a trace hint
+                trace_logs = await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: self._port.trace_lookup(scenario_id, f"trace-{txn_ids[0]}"),
+                )
+                for log in trace_logs[:3]:
+                    card = _pending_card(
+                        card_id=_card_id(self.PREFIX, counter),
+                        specialist="LogsAgent",
+                        source_type=SourceType.LOG,
+                        pointer={
+                            "log_id": log.get("log_id", "?"),
+                            "ts": log.get("ts", ""),
+                            "service": log.get("service", ""),
+                        },
+                        snippet=log.get("message", "")[:400],
+                        claim=f"Trace event for {txn_ids[0]}: {log.get('message','')[:80]}",
+                        stance=Stance.SUPPORTS,
+                        observed_at=log.get("ts"),
+                    )
+                    cards.append(card)
+                    await _emit(queue, _make_event(seq, "card_added", {"card_id": card.card_id, "agent": "LogsAgent"}))
+            except Exception as exc:
+                logger.warning("LogsAgent.trace_lookup failed: %s", exc)
+            await _emit(queue, _make_event(seq, "tool_finished", {
+                "agent": "LogsAgent", "tool": "trace_lookup"
+            }))
+
+        await _emit(queue, _make_event(seq, "tool_finished", {
+            "agent": "LogsAgent", "tool": "digest_signatures", "cards": len(cards)
+        }))
+        return cards
+
+
+# ---------------------------------------------------------------------------
+# CodeAgent
+# ---------------------------------------------------------------------------
+
+class CodeAgent:
+    """Inspects the git repository: searches code, reads lines, git log/blame/diff."""
+
+    PREFIX = "CODE"
+
+    def __init__(self, port: CodePort) -> None:
+        self._port = port
+
+    async def run(
+        self,
+        ticket: TicketDTO,
+        plan: AgentRoutingPlan,
+        seq: list[int],
+        queue: Optional[asyncio.Queue],
+    ) -> list[EvidenceCard]:
+        counter: list[int] = [0]
+        cards: list[EvidenceCard] = []
+        text = ticket.masked_text or ticket.text
+        entities = plan.extracted_entities
+
+        # Build search query from modules hint or ticket text
+        dev_steer_files = entities.get("dev_steer_focus", [])
+        modules = entities.get("modules", [])
+        search_query = dev_steer_files[0] if dev_steer_files else (
+            modules[0] if modules else self._extract_code_hint(text)
+        )
+
+        await _emit(queue, _make_event(seq, "tool_started", {
+            "agent": "CodeAgent", "tool": "search_code", "query": search_query
+        }))
+
+        # 1. Search for relevant code
+        try:
+            results = await asyncio.get_event_loop().run_in_executor(
+                None, lambda: self._port.search_code(search_query, limit=5)
+            )
+            for hit in results:
+                card = _pending_card(
+                    card_id=_card_id(self.PREFIX, counter),
+                    specialist="CodeAgent",
+                    source_type=SourceType.CODE,
+                    pointer={
+                        "repo": "clientrepo",
+                        "path": hit.get("path", ""),
+                        "line_start": hit.get("line_number", 1),
+                        "line_end": hit.get("line_number", 1),
+                        "sha": hit.get("sha", ""),
+                    },
+                    snippet=hit.get("snippet", "")[:400],
+                    claim=f"Code match in {hit.get('path','')}:{hit.get('line_number','')} — {hit.get('snippet','')[:80]}",
+                    stance=Stance.SUPPORTS,
+                )
+                cards.append(card)
+                await _emit(queue, _make_event(seq, "card_added", {"card_id": card.card_id, "agent": "CodeAgent"}))
+        except Exception as exc:
+            logger.warning("CodeAgent.search_code failed: %s", exc)
+
+        await _emit(queue, _make_event(seq, "tool_finished", {
+            "agent": "CodeAgent", "tool": "search_code", "cards": len(cards)
+        }))
+
+        # 2. Git log for the suspected file (if found)
+        if cards:
+            suspected_path = cards[0].pointer.get("path", "")
+            if suspected_path:
+                await _emit(queue, _make_event(seq, "tool_started", {
+                    "agent": "CodeAgent", "tool": "git_log", "path": suspected_path
+                }))
+                try:
+                    commits = await asyncio.get_event_loop().run_in_executor(
+                        None, lambda: self._port.git_log(suspected_path, n=5)
+                    )
+                    for commit in commits[:3]:
+                        card = _pending_card(
+                            card_id=_card_id(self.PREFIX, counter),
+                            specialist="CodeAgent",
+                            source_type=SourceType.CODE,
+                            pointer={
+                                "repo": "clientrepo",
+                                "path": suspected_path,
+                                "line_start": 1,
+                                "line_end": 1,
+                                "sha": commit.get("sha", ""),
+                            },
+                            snippet=(
+                                f"commit {commit.get('sha','')[:12]} by {commit.get('author','')} "
+                                f"on {commit.get('date','')}: {commit.get('message','')}"
+                            )[:400],
+                            claim=f"Commit {commit.get('sha','')[:12]}: {commit.get('message','')[:80]}",
+                            stance=Stance.CONTEXT,
+                            observed_at=commit.get("date"),
+                        )
+                        cards.append(card)
+                        await _emit(queue, _make_event(seq, "card_added", {"card_id": card.card_id, "agent": "CodeAgent"}))
+                except Exception as exc:
+                    logger.warning("CodeAgent.git_log failed: %s", exc)
+
+                await _emit(queue, _make_event(seq, "tool_finished", {
+                    "agent": "CodeAgent", "tool": "git_log"
+                }))
+
+        return cards
+
+    @staticmethod
+    def _extract_code_hint(text: str) -> str:
+        """Extract a code-relevant search term from ticket text."""
+        import re
+        # Look for .py file mentions
+        py_files = re.findall(r"\b\w+\.py\b", text)
+        if py_files:
+            return py_files[0]
+        # Look for error keywords
+        for kw in ["cutoff", "transfer", "fee", "calculator", "sms", "notification",
+                   "idempotency", "limit", "daily"]:
+            if kw in text.lower():
+                return kw
+        return "transfer"
+
+
+# ---------------------------------------------------------------------------
+# RecordAgent
+# ---------------------------------------------------------------------------
+
+class RecordAgent:
+    """Fetches masked transaction/record snapshots. Zero raw SQL."""
+
+    PREFIX = "REC"
+
+    def __init__(self, port: RecordPort) -> None:
+        self._port = port
+
+    async def run(
+        self,
+        ticket: TicketDTO,
+        plan: AgentRoutingPlan,
+        seq: list[int],
+        queue: Optional[asyncio.Queue],
+    ) -> list[EvidenceCard]:
+        counter: list[int] = [0]
+        cards: list[EvidenceCard] = []
+        scenario_id = ticket.scenario_id or "S01"
+        txn_ids = plan.extracted_entities.get("transaction_ids", [])
+
+        # Also look for TXN IDs in ticket text
+        import re
+        text_txns = re.findall(r"TXN-\d+", ticket.masked_text or ticket.text, re.IGNORECASE)
+        all_txn_ids = list(dict.fromkeys(txn_ids + text_txns))
+
+        if not all_txn_ids:
+            logger.info("RecordAgent: no transaction IDs found — skipping")
+            return []
+
+        await _emit(queue, _make_event(seq, "tool_started", {
+            "agent": "RecordAgent", "tool": "get_transfer_record"
+        }))
+
+        for txn_id in all_txn_ids[:3]:
+            try:
+                record = await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda tid=txn_id: self._port.get_transfer_record(scenario_id, tid),
+                )
+                if record:
+                    card = _pending_card(
+                        card_id=_card_id(self.PREFIX, counter),
+                        specialist="RecordAgent",
+                        source_type=SourceType.RECORD,
+                        pointer={
+                            "table": "transfers",
+                            "id": txn_id,
+                            "field": "status",
+                        },
+                        snippet=(
+                            f"Transfer {txn_id}: status={record.get('status')}, "
+                            f"amount={record.get('amount')}, fee={record.get('fee')}, "
+                            f"created_at={record.get('created_at')}, "
+                            f"account={record.get('masked_account','[ACCT_REDACTED]')}"
+                        )[:400],
+                        claim=f"Record {txn_id}: status={record.get('status')}, amount={record.get('amount')}",
+                        stance=Stance.SUPPORTS,
+                        observed_at=record.get("created_at"),
+                    )
+                    cards.append(card)
+                    await _emit(queue, _make_event(seq, "card_added", {"card_id": card.card_id, "agent": "RecordAgent"}))
+                else:
+                    logger.info("RecordAgent: no record found for %s in scenario %s", txn_id, scenario_id)
+            except Exception as exc:
+                logger.warning("RecordAgent.get_transfer_record(%s) failed: %s", txn_id, exc)
+
+        await _emit(queue, _make_event(seq, "tool_finished", {
+            "agent": "RecordAgent", "tool": "get_transfer_record", "cards": len(cards)
+        }))
+        return cards
+
+
+# ---------------------------------------------------------------------------
+# Parallel runner
+# ---------------------------------------------------------------------------
+
+async def _emit(
+    queue: Optional[asyncio.Queue],
+    event: SSEEvent,
+) -> None:
+    """Put an SSEEvent on the queue if provided; otherwise discard."""
+    if queue is not None:
+        await queue.put(event)
+
+
+async def run_active_agents(
+    ticket: TicketDTO,
+    plan: AgentRoutingPlan,
+    adapters: dict[str, Any],
+    event_queue: Optional[asyncio.Queue] = None,
+) -> list[EvidenceCard]:
+    """
+    Run all ACTIVE agents concurrently via asyncio.gather.
+
+    Emits 'agent_skipped' SSEEvents for pruned agents.
+    Returns the combined list of EvidenceCards from all active agents.
+
+    Args:
+        ticket:       The masked TicketDTO.
+        plan:         AgentRoutingPlan from the planner.
+        adapters:     Dict of port adapters from get_adapters().
+        event_queue:  asyncio.Queue to stream SSEEvents; None to discard.
+    """
+    # Shared sequence counter (mutable list for closure mutation)
+    seq: list[int] = [0]
+
+    # Emit agent_skipped for pruned agents
+    for agent_name, reason in plan.skipped_agents.items():
+        await _emit(event_queue, _make_event(seq, "agent_skipped", {
+            "agent": agent_name,
+            "reason": reason,
+        }))
+
+    # Build coroutines for each ACTIVE agent
+    _agent_map = {
+        "HistoryAgent":   lambda: HistoryAgent(adapters["history"]).run(ticket, plan, seq, event_queue),
+        "KnowledgeAgent": lambda: KnowledgeAgent(adapters["knowledge"]).run(ticket, plan, seq, event_queue),
+        "LogsAgent":      lambda: LogsAgent(adapters["logs"]).run(ticket, plan, seq, event_queue),
+        "CodeAgent":      lambda: CodeAgent(adapters["code"]).run(ticket, plan, seq, event_queue),
+        "RecordAgent":    lambda: RecordAgent(adapters["record"]).run(ticket, plan, seq, event_queue),
+    }
+
+    coros = [
+        _agent_map[agent]()
+        for agent in plan.active_agents
+        if agent in _agent_map
+    ]
+
+    if not coros:
+        logger.info("No active agents — SECURITY_SENSITIVE or all pruned.")
+        return []
+
+    # Run all active agents in parallel
+    results: list[list[EvidenceCard]] = await asyncio.gather(*coros, return_exceptions=False)
+
+    # Flatten and return
+    all_cards: list[EvidenceCard] = []
+    for card_list in results:
+        if isinstance(card_list, list):
+            all_cards.extend(card_list)
+
+    logger.info(
+        "Specialist swarm complete: %d active agents, %d evidence cards",
+        len(plan.active_agents),
+        len(all_cards),
+    )
+    return all_cards
