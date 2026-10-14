@@ -1,0 +1,9 @@
+{
+  "scenario_id": "S11",
+  "human_context": {
+    "source": "CLIENT_REPLY",
+    "message": "Happened at 4:15 PM IST on same-day transfer TXN-1009",
+    "parent_investigation_id": "inv-s11-pass1",
+    "pinned_card_ids": []
+  }
+}

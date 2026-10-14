@@ -1,0 +1,20 @@
+scenario_id: S10
+ticket_class: HOW_TO_USER_ERROR
+severity: P4
+owner_team: team-payments
+doc_page_id: DOC-BEN-02
+contradictions_expected: []
+root_cause_summary: "Inquiry regarding workflow for international beneficiary addition. Answer provided via User Guide DOC-BEN-02."
+active_agents_expected:
+  - KnowledgeAgent
+skipped_agents_expected:
+  LogsAgent: "Pruned: How-To query requires documentation and user guides only"
+  CodeAgent: "Pruned: User inquiry does not require source code inspection"
+  RecordAgent: "Pruned: No individual transaction record referenced"
+  HistoryAgent: "Pruned: No incident or release correlation needed"
+min_trust_score: 0.90
+policy_action: CONCLUDE
+tags:
+  - HOW_TO_USER_ERROR
+  - KNOWLEDGE_ONLY
+  - SMART_ROUTING

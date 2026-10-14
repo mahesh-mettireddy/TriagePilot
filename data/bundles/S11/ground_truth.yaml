@@ -1,0 +1,40 @@
+scenario_id: S11
+pass1:
+  ticket_class: INSUFFICIENT_INFO
+  severity: P3
+  owner_team: team-payments
+  policy_action: ABSTAIN
+  trust_score: 0.22
+  discriminating_questions:
+    - "What is the transaction reference ID (TXN-XXXX) that failed?"
+    - "At what time was the transfer submitted and what was the transfer amount?"
+  active_agents:
+    - HistoryAgent
+    - LogsAgent
+  skipped_agents:
+    CodeAgent: "Pruned: Ticket lacks specific transaction or error details"
+    RecordAgent: "Pruned: Missing record identifier in intake"
+    KnowledgeAgent: "Pruned: Defer until discriminating questions answered"
+
+resumed:
+  ticket_class: CODE_DEFECT
+  severity: P2
+  owner_team: team-payments
+  culprit_file: app/transfers/cutoff.py
+  culprit_line_range:
+    start: 20
+    end: 27
+  culprit_commit_sha: "142e868"
+  policy_action: CONCLUDE
+  trust_score: 0.86
+  active_agents:
+    - LogsAgent
+    - CodeAgent
+    - HistoryAgent
+    - KnowledgeAgent
+    - RecordAgent
+  root_cause_summary: "Client clarification identified transfer TXN-1009 at 4:15 PM IST. Cutoff logic in app/transfers/cutoff.py compares datetime.utcnow().hour >= 16 instead of converting to Asia/Kolkata (IST)."
+tags:
+  - INSUFFICIENT_INFO
+  - ABSTAIN
+  - CLIENT_REPLY_RESUME

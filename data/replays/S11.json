@@ -1,0 +1,328 @@
+{
+  "scenario_id": "S11",
+  "events": [
+    {
+      "seq": 1,
+      "ts": "2026-10-14T10:00:00.010Z",
+      "type": "masking_done",
+      "data": {
+        "pii_redacted_count": 2,
+        "injection_detected": false,
+        "injection_note": null
+      }
+    },
+    {
+      "seq": 2,
+      "ts": "2026-10-14T10:00:00.080Z",
+      "type": "plan_created",
+      "data": {
+        "ticket_class": "INSUFFICIENT_INFO",
+        "severity": "P3",
+        "extracted_entities": {
+          "scenario": "S11",
+          "ticket_id": "TCK-1111"
+        },
+        "active_agents": [
+          "HistoryAgent",
+          "LogsAgent"
+        ],
+        "skipped_agents": {
+          "CodeAgent": "Pruned: Ticket lacks specific transaction or error details",
+          "RecordAgent": "Pruned: Missing record identifier in intake",
+          "KnowledgeAgent": "Pruned: Defer until discriminating questions answered"
+        },
+        "max_tool_calls": 12,
+        "injection_detected": false,
+        "injection_note": null
+      }
+    },
+    {
+      "seq": 3,
+      "ts": "2026-10-14T10:00:00.180Z",
+      "type": "agent_skipped",
+      "data": {
+        "agent": "CodeAgent",
+        "reason": "Pruned: Ticket lacks specific transaction or error details"
+      }
+    },
+    {
+      "seq": 4,
+      "ts": "2026-10-14T10:00:00.200Z",
+      "type": "agent_skipped",
+      "data": {
+        "agent": "RecordAgent",
+        "reason": "Pruned: Missing record identifier in intake"
+      }
+    },
+    {
+      "seq": 5,
+      "ts": "2026-10-14T10:00:00.220Z",
+      "type": "agent_skipped",
+      "data": {
+        "agent": "KnowledgeAgent",
+        "reason": "Pruned: Defer until discriminating questions answered"
+      }
+    },
+    {
+      "seq": 6,
+      "ts": "2026-10-14T10:00:00.650Z",
+      "type": "trust_update",
+      "data": {
+        "score": 0.22,
+        "band": "LOW",
+        "policy_action": "ABSTAIN",
+        "components": {
+          "c_ver": 0.2,
+          "c_div": 0.3,
+          "c_spec": 0.2,
+          "c_time": 0.85,
+          "p_contra": 0,
+          "p_unver": 0
+        },
+        "rationale": "Mathematical trust score (0.22) is below minimum threshold (0.45). Insufficient specific evidence to draw reliable root-cause conclusion."
+      }
+    },
+    {
+      "seq": 7,
+      "ts": "2026-10-14T10:00:00.700Z",
+      "type": "abstain",
+      "data": {
+        "questions": [
+          {
+            "text": "What is the transaction reference ID (TXN-XXXX) that failed?",
+            "discriminates": [
+              "Transaction lookup in ledger",
+              "Trace correlation"
+            ]
+          },
+          {
+            "text": "At what time and for what amount was the transfer initiated?",
+            "discriminates": [
+              "Cutoff window validation",
+              "Limit check evaluation"
+            ]
+          }
+        ],
+        "trust": {
+          "score": 0.22,
+          "band": "LOW",
+          "policy_action": "ABSTAIN",
+          "components": {
+            "c_ver": 0.2,
+            "c_div": 0.3,
+            "c_spec": 0.2,
+            "c_time": 0.85,
+            "p_contra": 0,
+            "p_unver": 0
+          },
+          "rationale": "Mathematical trust score (0.22) is below minimum threshold (0.45). Insufficient specific evidence to draw reliable root-cause conclusion."
+        }
+      }
+    },
+    {
+      "seq": 8,
+      "ts": "2026-10-14T10:00:00.820Z",
+      "type": "report_ready",
+      "data": {
+        "investigation_id": "inv-s11",
+        "ticket_id": "TCK-1111",
+        "scenario_id": "S11",
+        "mode_used": "replay",
+        "ticket_class": "INSUFFICIENT_INFO",
+        "severity": "P3",
+        "owner_team": "team-payments",
+        "summary": "Intake lacks transaction reference, timestamp, or error message; principled abstention triggered",
+        "routing_plan": {
+          "ticket_class": "INSUFFICIENT_INFO",
+          "severity": "P3",
+          "extracted_entities": {
+            "scenario": "S11",
+            "ticket_id": "TCK-1111"
+          },
+          "active_agents": [
+            "HistoryAgent",
+            "LogsAgent"
+          ],
+          "skipped_agents": {
+            "CodeAgent": "Pruned: Ticket lacks specific transaction or error details",
+            "RecordAgent": "Pruned: Missing record identifier in intake",
+            "KnowledgeAgent": "Pruned: Defer until discriminating questions answered"
+          },
+          "max_tool_calls": 12,
+          "injection_detected": false,
+          "injection_note": null
+        },
+        "probable_root_cause": null,
+        "alternatives": [],
+        "contradictions": [],
+        "trust": {
+          "score": 0.22,
+          "band": "LOW",
+          "policy_action": "ABSTAIN",
+          "components": {
+            "c_ver": 0.2,
+            "c_div": 0.3,
+            "c_spec": 0.2,
+            "c_time": 0.85,
+            "p_contra": 0,
+            "p_unver": 0
+          },
+          "rationale": "Mathematical trust score (0.22) is below minimum threshold (0.45). Insufficient specific evidence to draw reliable root-cause conclusion."
+        },
+        "verified_cards": [],
+        "dropped_cards": [],
+        "verified_claims_count": 0,
+        "dropped_claims_count": 0,
+        "recommended_actions": [
+          "Review git commit and deploy patch to staging",
+          "Verify automated unit tests against seeded regression suite",
+          "Notify customer with approved customer reply draft"
+        ],
+        "workaround": null,
+        "questions_for_client": [
+          {
+            "text": "What is the transaction reference ID (TXN-XXXX) that failed?",
+            "discriminates": [
+              "Transaction lookup in ledger",
+              "Trace correlation"
+            ]
+          },
+          {
+            "text": "At what time and for what amount was the transfer initiated?",
+            "discriminates": [
+              "Cutoff window validation",
+              "Limit check evaluation"
+            ]
+          }
+        ],
+        "customer_reply_draft": "Thank you for reaching out. To assist you with your transfer inquiry, could you please provide: (1) The transaction reference ID (TXN-XXXX), and (2) The approximate time and transfer amount? Once provided, our technical team will immediately pinpoint the issue.",
+        "leak_check": {
+          "passed": true,
+          "notes": [
+            "No raw internal file paths or stack traces found in customer draft"
+          ]
+        },
+        "jira_draft": null,
+        "kb_gap": null,
+        "suggested_diagnostic_queries": [
+          "SELECT * FROM transfers WHERE transfer_id = 'TCK-1111'",
+          "grep -rn 'cutoff' app/transfers/"
+        ],
+        "decision": {
+          "status": "pending",
+          "by": null,
+          "reason": null,
+          "edits_diff": null,
+          "write_back_ref": null
+        },
+        "audit_ref": "sha256-audit-inv-s11",
+        "metrics": {
+          "tool_calls": 4,
+          "tokens": 3840,
+          "latency_ms": 820,
+          "cost_usd": 0.0042
+        }
+      }
+    }
+  ],
+  "report": {
+    "investigation_id": "inv-s11",
+    "ticket_id": "TCK-1111",
+    "scenario_id": "S11",
+    "mode_used": "replay",
+    "ticket_class": "INSUFFICIENT_INFO",
+    "severity": "P3",
+    "owner_team": "team-payments",
+    "summary": "Intake lacks transaction reference, timestamp, or error message; principled abstention triggered",
+    "routing_plan": {
+      "ticket_class": "INSUFFICIENT_INFO",
+      "severity": "P3",
+      "extracted_entities": {
+        "scenario": "S11",
+        "ticket_id": "TCK-1111"
+      },
+      "active_agents": [
+        "HistoryAgent",
+        "LogsAgent"
+      ],
+      "skipped_agents": {
+        "CodeAgent": "Pruned: Ticket lacks specific transaction or error details",
+        "RecordAgent": "Pruned: Missing record identifier in intake",
+        "KnowledgeAgent": "Pruned: Defer until discriminating questions answered"
+      },
+      "max_tool_calls": 12,
+      "injection_detected": false,
+      "injection_note": null
+    },
+    "probable_root_cause": null,
+    "alternatives": [],
+    "contradictions": [],
+    "trust": {
+      "score": 0.22,
+      "band": "LOW",
+      "policy_action": "ABSTAIN",
+      "components": {
+        "c_ver": 0.2,
+        "c_div": 0.3,
+        "c_spec": 0.2,
+        "c_time": 0.85,
+        "p_contra": 0,
+        "p_unver": 0
+      },
+      "rationale": "Mathematical trust score (0.22) is below minimum threshold (0.45). Insufficient specific evidence to draw reliable root-cause conclusion."
+    },
+    "verified_cards": [],
+    "dropped_cards": [],
+    "verified_claims_count": 0,
+    "dropped_claims_count": 0,
+    "recommended_actions": [
+      "Review git commit and deploy patch to staging",
+      "Verify automated unit tests against seeded regression suite",
+      "Notify customer with approved customer reply draft"
+    ],
+    "workaround": null,
+    "questions_for_client": [
+      {
+        "text": "What is the transaction reference ID (TXN-XXXX) that failed?",
+        "discriminates": [
+          "Transaction lookup in ledger",
+          "Trace correlation"
+        ]
+      },
+      {
+        "text": "At what time and for what amount was the transfer initiated?",
+        "discriminates": [
+          "Cutoff window validation",
+          "Limit check evaluation"
+        ]
+      }
+    ],
+    "customer_reply_draft": "Thank you for reaching out. To assist you with your transfer inquiry, could you please provide: (1) The transaction reference ID (TXN-XXXX), and (2) The approximate time and transfer amount? Once provided, our technical team will immediately pinpoint the issue.",
+    "leak_check": {
+      "passed": true,
+      "notes": [
+        "No raw internal file paths or stack traces found in customer draft"
+      ]
+    },
+    "jira_draft": null,
+    "kb_gap": null,
+    "suggested_diagnostic_queries": [
+      "SELECT * FROM transfers WHERE transfer_id = 'TCK-1111'",
+      "grep -rn 'cutoff' app/transfers/"
+    ],
+    "decision": {
+      "status": "pending",
+      "by": null,
+      "reason": null,
+      "edits_diff": null,
+      "write_back_ref": null
+    },
+    "audit_ref": "sha256-audit-inv-s11",
+    "metrics": {
+      "tool_calls": 4,
+      "tokens": 3840,
+      "latency_ms": 820,
+      "cost_usd": 0.0042
+    }
+  }
+}

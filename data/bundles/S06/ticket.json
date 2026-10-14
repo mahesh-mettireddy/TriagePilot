@@ -1,0 +1,10 @@
+{
+  "id": "TCK-6006",
+  "scenario_id": "S06",
+  "channel": "portal",
+  "reporter_role": "client",
+  "created_at": "2026-10-14T14:10:00+05:30",
+  "text": "Transfer of exactly ₹1,00,000.00 is blocked! Error popup says daily limit exceeded. Account 778899001122 had zero transfers today. According to bank policy DOC-LIMITS-01, transfers equal to ₹1,00,000 are explicitly permitted. See attached screenshot.",
+  "attachments": ["screenshot.png"],
+  "product_hint": "limits"
+}

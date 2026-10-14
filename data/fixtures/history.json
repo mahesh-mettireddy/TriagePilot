@@ -1,0 +1,108 @@
+{
+  "incidents": [
+    {
+      "incident_id": "INC-1021",
+      "title": "Intermittent SMS delivery failures during high traffic",
+      "service": "notifications",
+      "severity": "P3",
+      "resolved_at": "2026-08-10T14:30:00Z",
+      "root_cause": "Downstream SMS gateway rate limiting during end-of-month salary dispatches. Resolved by configuring connection pool backoff.",
+      "resolution": "Applied backoff in provider adapter.",
+      "tags": ["sms", "rate-limit", "notifications"]
+    },
+    {
+      "incident_id": "INC-1088",
+      "title": "Floating point mismatch on high-volume currency conversion",
+      "service": "fees",
+      "severity": "P2",
+      "resolved_at": "2026-09-02T11:20:00Z",
+      "root_cause": "Rounding logic in foreign exchange converter suffered minor rounding drift on specific decimal currencies.",
+      "resolution": "Migrated FX rate multiplication to Decimal.",
+      "tags": ["fees", "rounding", "float"]
+    },
+    {
+      "incident_id": "INC-1095",
+      "title": "Double debit reported on rapid submit button click",
+      "service": "transfers",
+      "severity": "P1",
+      "resolved_at": "2026-09-18T16:45:00Z",
+      "root_cause": "Frontend submitted duplicate requests before disabling submit button. Idempotency middleware added to reject identical keys.",
+      "resolution": "Enforced client Idempotency-Key header on POST /api/transfers.",
+      "tags": ["idempotency", "duplicate-debit", "transfers"]
+    }
+  ],
+  "changes": [
+    {
+      "change_id": "CHG-390",
+      "title": "Implement Daily Limit Check (₹1,00,000 threshold)",
+      "service": "limits",
+      "author": "dev-limits@bank.org",
+      "deployed_at": "2026-09-01T09:00:00Z",
+      "commit_sha": "a1b2c3d4e5f601",
+      "files_changed": ["app/limits/daily_limit.py"],
+      "description": "Enforce ₹1,00,000 daily cumulative retail transfer cap."
+    },
+    {
+      "change_id": "CHG-395",
+      "title": "Tiered transfer fee calculation release",
+      "service": "fees",
+      "author": "dev-fees@bank.org",
+      "deployed_at": "2026-09-08T12:00:00Z",
+      "commit_sha": "b2c3d4e5f6a102",
+      "files_changed": ["app/fees/calculator.py"],
+      "description": "Standard transfer fee set to 1.25%."
+    },
+    {
+      "change_id": "CHG-401",
+      "title": "Refactor SMS notification dispatch pipeline",
+      "service": "notifications",
+      "author": "dev-comms@bank.org",
+      "deployed_at": "2026-09-15T08:30:00Z",
+      "commit_sha": "c3d4e5f6a1b203",
+      "files_changed": ["app/notifications/sms.py"],
+      "description": "Modernize SMS gateway client to asynchronous HTTP calls. Legacy 3-attempt inline retry loop removed in favor of gateway client default."
+    },
+    {
+      "change_id": "CHG-405",
+      "title": "Update same-day RTGS/NEFT cutoff window policy",
+      "service": "transfers",
+      "author": "dev-payments@bank.org",
+      "deployed_at": "2026-10-01T06:00:00Z",
+      "commit_sha": "d4e5f6a1b2c304",
+      "files_changed": ["app/transfers/cutoff.py"],
+      "description": "Enforce 16:00 cutoff time check for same-day settlements."
+    },
+    {
+      "change_id": "CHG-410",
+      "title": "chore: bump httpx timeout config to 15s",
+      "service": "core",
+      "author": "dev-infra@bank.org",
+      "deployed_at": "2026-10-12T10:15:00Z",
+      "commit_sha": "e5f6a1b2c3d405",
+      "files_changed": ["app/config.py"],
+      "description": "Increase default downstream HTTP client timeout from 5s to 15s to absorb latency spikes."
+    }
+  ],
+  "known_errors": [
+    {
+      "ke_id": "KE-104",
+      "title": "Bank-holiday NEFT settlement batch delay",
+      "service": "settlement",
+      "pattern": "NEFT batch settlements delayed or marked PENDING_SETTLEMENT on official RBI bank holidays",
+      "root_cause": "The Reserve Bank of India clearing house does not process clearing batches on national bank holidays and 2nd/4th Saturdays. Outbound batches remain queued in PENDING_SETTLEMENT state until next clearing window.",
+      "workaround": "No manual intervention or database fix required. Queued transfer batches automatically clear and settle at 08:00 IST on the following business day. Inform client of the statutory holiday schedule.",
+      "active_flag": true,
+      "tags": ["settlement", "neft", "holiday", "rbi"]
+    },
+    {
+      "ke_id": "KE-108",
+      "title": "Core banking ledger maintenance window Sunday 02:00-04:00 IST",
+      "service": "transfers",
+      "pattern": "503 SERVICE_UNAVAILABLE from CBS during early Sunday maintenance",
+      "root_cause": "Scheduled core banking ledger index reorganization.",
+      "workaround": "Retry transfer after 04:00 IST. Transmit advisory to client portal.",
+      "active_flag": true,
+      "tags": ["maintenance", "cbs", "downtime"]
+    }
+  ]
+}

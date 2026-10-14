@@ -1,0 +1,110 @@
+{
+  "docs": [
+    {
+      "page_id": "DOC-SMS-01",
+      "space": "RUNBOOKS",
+      "title": "SMS Gateway Notification Delivery & Alerts",
+      "last_updated": "2025-11-20T08:00:00Z",
+      "author": "tech-docs@bank.org",
+      "sections": [
+        {
+          "heading": "Overview",
+          "content": "All customer-facing transfer notifications trigger an SMS dispatch event to the primary registered mobile number."
+        },
+        {
+          "heading": "Retry Policy",
+          "content": "SMS notifications automatically retry 3 times with exponential backoff (1s, 2s, 4s) before marking delivery as failed. If all retries fail, an alert is published to the notifications dead-letter queue."
+        },
+        {
+          "heading": "Troubleshooting",
+          "content": "Verify provider gateway connectivity and check whether the recipient number is on the National Do Not Disturb (DND) registry."
+        }
+      ]
+    },
+    {
+      "page_id": "DOC-BEN-02",
+      "space": "USER_GUIDES",
+      "title": "Adding Domestic and International Beneficiaries",
+      "last_updated": "2026-06-15T10:00:00Z",
+      "author": "support-ops@bank.org",
+      "sections": [
+        {
+          "heading": "Domestic Beneficiaries",
+          "content": "Domestic beneficiaries require a valid 10-18 digit account number and an 11-character Indian Financial System Code (IFSC). Cooling period is 30 minutes with a ₹50,000 transaction limit during cooling."
+        },
+        {
+          "heading": "International Beneficiaries",
+          "content": "To add an international beneficiary, navigate to Settings > Beneficiary Management > Add International. Enter the recipient's IBAN or Account Number, bank SWIFT/BIC code, destination country, bank physical address, and remittance purpose code (e.g. S0101 for education, S0102 for software services). Approval requires document verification and completes within 4 business hours."
+        },
+        {
+          "heading": "Security Verification",
+          "content": "A one-time passcode (OTP) is sent to the registered mobile number to confirm beneficiary addition."
+        }
+      ]
+    },
+    {
+      "page_id": "DOC-CUTOFF-01",
+      "space": "SOP",
+      "title": "Standard Operating Procedure: Same-Day Transfer Cutoff Windows",
+      "last_updated": "2026-07-01T09:00:00Z",
+      "author": "payments-ops@bank.org",
+      "sections": [
+        {
+          "heading": "Cutoff Schedule",
+          "content": "Same-day domestic transfers (RTGS/NEFT) must be submitted before 16:00 Indian Standard Time (IST, UTC+5:30). Any transfer initiated at or after 16:00 IST is rejected or queued for the next business day clearing cycle."
+        },
+        {
+          "heading": "Timezone Handling",
+          "content": "All business logic evaluating operating hours must calculate the current time in Asia/Kolkata timezone (IST) regardless of the server or container's system clock (which runs in UTC)."
+        }
+      ]
+    },
+    {
+      "page_id": "DOC-FEES-01",
+      "space": "BILLING",
+      "title": "Fee Schedule and Tier Calculation Guide",
+      "last_updated": "2026-08-01T12:00:00Z",
+      "author": "finance-billing@bank.org",
+      "sections": [
+        {
+          "heading": "Standard Tier Transfers",
+          "content": "The standard tier transfer fee is strictly 1.25% (0.0125) of the principal transfer amount, rounded to 2 decimal places using standard financial decimal arithmetic. Calculations must use high-precision Decimal types to prevent fractional cent/paisa drift."
+        },
+        {
+          "heading": "Fee Caps and Minimums",
+          "content": "Minimum fee is ₹1.00; maximum fee is ₹500.00 for standard retail transfers."
+        }
+      ]
+    },
+    {
+      "page_id": "DOC-LIMITS-01",
+      "space": "RISK_CONTROLS",
+      "title": "Transfer Limits and Risk Controls Policy",
+      "last_updated": "2026-07-20T14:00:00Z",
+      "author": "risk-compliance@bank.org",
+      "sections": [
+        {
+          "heading": "Daily Cumulative Limits",
+          "content": "The daily cumulative transfer limit for standard retail accounts is ₹1,00,000. Transfers exceeding this limit are blocked. Transfers equal to ₹1,00,000 are permitted and must not be rejected."
+        },
+        {
+          "heading": "Per-Transaction Limits",
+          "content": "Maximum single transaction limit is ₹1,00,000 for retail tier."
+        }
+      ]
+    },
+    {
+      "page_id": "DOC-IDEMPOTENCY-01",
+      "space": "ARCHITECTURE",
+      "title": "API Idempotency Standards",
+      "last_updated": "2026-05-10T11:00:00Z",
+      "author": "arch-council@bank.org",
+      "sections": [
+        {
+          "heading": "Header Specification",
+          "content": "Mutating endpoints (such as POST /api/transfers) accept an Idempotency-Key header. Header inspection must be case-insensitive (Idempotency-Key or idempotency-key). An atomic distributed lock must be acquired before ledger debit to guarantee zero duplicate execution."
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,515 @@
+{
+  "scenario_id": "S11",
+  "events": [
+    {
+      "seq": 1,
+      "ts": "2026-10-14T10:00:00.010Z",
+      "type": "masking_done",
+      "data": {
+        "pii_redacted_count": 2,
+        "injection_detected": false,
+        "injection_note": null
+      }
+    },
+    {
+      "seq": 2,
+      "ts": "2026-10-14T10:00:00.080Z",
+      "type": "plan_created",
+      "data": {
+        "ticket_class": "CODE_DEFECT",
+        "severity": "P2",
+        "extracted_entities": {
+          "scenario": "S11",
+          "ticket_id": "TCK-1111"
+        },
+        "active_agents": [
+          "LogsAgent",
+          "CodeAgent",
+          "HistoryAgent",
+          "KnowledgeAgent",
+          "RecordAgent"
+        ],
+        "skipped_agents": {},
+        "max_tool_calls": 12,
+        "injection_detected": false,
+        "injection_note": null
+      }
+    },
+    {
+      "seq": 3,
+      "ts": "2026-10-14T10:00:00.280Z",
+      "type": "card_added",
+      "data": {
+        "card_id": "card-s11-resumed-code",
+        "specialist": "CodeAgent",
+        "source_type": "code",
+        "pointer": {
+          "repo": "transfers-demo-app",
+          "path": "app/transfers/cutoff.py",
+          "line_start": 20,
+          "line_end": 27,
+          "sha": "142e868"
+        },
+        "snippet": "if current_time.hour >= 16:\n    raise CutoffExceededException(f\"Transfer rejected: cutoff time 16:00 exceeded (evaluated utc hour: {current_time.hour})\")",
+        "claim": "Cutoff window check evaluates UTC hour directly.",
+        "stance": "supports",
+        "observed_at": "2026-10-14T10:05:04Z",
+        "github_permalink": "https://github.com/bank-org/transfers-demo-app/blob/142e868/app/transfers/cutoff.py#L20-L27",
+        "verification": {
+          "status": "verified",
+          "reason": "Verified against git commit 142e868."
+        }
+      }
+    },
+    {
+      "seq": 4,
+      "ts": "2026-10-14T10:00:00.310Z",
+      "type": "verifier_result",
+      "data": {
+        "card_id": "card-s11-resumed-code",
+        "status": "verified",
+        "reason": "Verified against git commit 142e868."
+      }
+    },
+    {
+      "seq": 5,
+      "ts": "2026-10-14T10:00:00.320Z",
+      "type": "card_added",
+      "data": {
+        "card_id": "card-s11-resumed-log",
+        "specialist": "LogsAgent",
+        "source_type": "log",
+        "pointer": {
+          "log_id": "LOG-S11-002",
+          "ts": "2026-10-14T10:45:00Z",
+          "service": "transfers"
+        },
+        "snippet": "Transfer rejected: cutoff time 16:00 exceeded (evaluated utc hour: 10)",
+        "claim": "TXN-1009 logged as rejected at 10:45 UTC (16:15 IST).",
+        "stance": "supports",
+        "observed_at": "2026-10-14T10:05:02Z",
+        "github_permalink": null,
+        "verification": {
+          "status": "verified",
+          "reason": "Confirmed in logs.jsonl."
+        }
+      }
+    },
+    {
+      "seq": 6,
+      "ts": "2026-10-14T10:00:00.350Z",
+      "type": "verifier_result",
+      "data": {
+        "card_id": "card-s11-resumed-log",
+        "status": "verified",
+        "reason": "Confirmed in logs.jsonl."
+      }
+    },
+    {
+      "seq": 7,
+      "ts": "2026-10-14T10:00:00.360Z",
+      "type": "card_added",
+      "data": {
+        "card_id": "card-s11-resumed-rec",
+        "specialist": "RecordAgent",
+        "source_type": "record",
+        "pointer": {
+          "table": "transfers",
+          "id": "TXN-1009",
+          "field": "status"
+        },
+        "snippet": "transfer_id: TXN-1009, amount: 45000.0, status: REJECTED_CUTOFF",
+        "claim": "Ledger record confirms TXN-1009 rejected due to cutoff.",
+        "stance": "supports",
+        "observed_at": "2026-10-14T10:05:03Z",
+        "github_permalink": null,
+        "verification": {
+          "status": "verified",
+          "reason": "Confirmed in record_snapshot.json."
+        }
+      }
+    },
+    {
+      "seq": 8,
+      "ts": "2026-10-14T10:00:00.390Z",
+      "type": "verifier_result",
+      "data": {
+        "card_id": "card-s11-resumed-rec",
+        "status": "verified",
+        "reason": "Confirmed in record_snapshot.json."
+      }
+    },
+    {
+      "seq": 9,
+      "ts": "2026-10-14T10:00:00.650Z",
+      "type": "trust_update",
+      "data": {
+        "score": 0.86,
+        "band": "HIGH",
+        "policy_action": "CONCLUDE",
+        "components": {
+          "c_ver": 0.85,
+          "c_div": 0.8,
+          "c_spec": 0.9,
+          "c_time": 0.85,
+          "p_contra": 0,
+          "p_unver": 0
+        },
+        "rationale": "Client reply augmented context with exact TXN-1009 ID and 4:15 PM IST timestamp; trust jumped from 0.22 to 0.86 with conclusive evidence."
+      }
+    },
+    {
+      "seq": 10,
+      "ts": "2026-10-14T10:00:00.820Z",
+      "type": "report_ready",
+      "data": {
+        "investigation_id": "inv-s11-resumed",
+        "ticket_id": "TCK-1111",
+        "scenario_id": "S11",
+        "mode_used": "replay",
+        "ticket_class": "CODE_DEFECT",
+        "severity": "P2",
+        "owner_team": "team-payments",
+        "summary": "Client clarification confirmed failure at 4:15 PM IST on TXN-1009; root cause pinpointed to cutoff window timezone defect in app/transfers/cutoff.py",
+        "routing_plan": {
+          "ticket_class": "CODE_DEFECT",
+          "severity": "P2",
+          "extracted_entities": {
+            "scenario": "S11",
+            "ticket_id": "TCK-1111"
+          },
+          "active_agents": [
+            "LogsAgent",
+            "CodeAgent",
+            "HistoryAgent",
+            "KnowledgeAgent",
+            "RecordAgent"
+          ],
+          "skipped_agents": {},
+          "max_tool_calls": 12,
+          "injection_detected": false,
+          "injection_note": null
+        },
+        "probable_root_cause": {
+          "hypothesis_id": "hyp-s11-resumed-1",
+          "statement": "Cutoff check in app/transfers/cutoff.py evaluates datetime.utcnow().hour >= 16 instead of converting to Asia/Kolkata timezone (IST), incorrectly blocking transfer TXN-1009 at 4:15 PM IST.",
+          "culprit_files": [
+            "app/transfers/cutoff.py"
+          ],
+          "culprit_commit": "142e868",
+          "supporting_card_ids": [
+            "card-s11-resumed-code",
+            "card-s11-resumed-log",
+            "card-s11-resumed-rec"
+          ],
+          "contradicting_card_ids": [],
+          "score": 0.93
+        },
+        "alternatives": [],
+        "contradictions": [],
+        "trust": {
+          "score": 0.86,
+          "band": "HIGH",
+          "policy_action": "CONCLUDE",
+          "components": {
+            "c_ver": 0.85,
+            "c_div": 0.8,
+            "c_spec": 0.9,
+            "c_time": 0.85,
+            "p_contra": 0,
+            "p_unver": 0
+          },
+          "rationale": "Client reply augmented context with exact TXN-1009 ID and 4:15 PM IST timestamp; trust jumped from 0.22 to 0.86 with conclusive evidence."
+        },
+        "verified_cards": [
+          {
+            "card_id": "card-s11-resumed-code",
+            "specialist": "CodeAgent",
+            "source_type": "code",
+            "pointer": {
+              "repo": "transfers-demo-app",
+              "path": "app/transfers/cutoff.py",
+              "line_start": 20,
+              "line_end": 27,
+              "sha": "142e868"
+            },
+            "snippet": "if current_time.hour >= 16:\n    raise CutoffExceededException(f\"Transfer rejected: cutoff time 16:00 exceeded (evaluated utc hour: {current_time.hour})\")",
+            "claim": "Cutoff window check evaluates UTC hour directly.",
+            "stance": "supports",
+            "observed_at": "2026-10-14T10:05:04Z",
+            "github_permalink": "https://github.com/bank-org/transfers-demo-app/blob/142e868/app/transfers/cutoff.py#L20-L27",
+            "verification": {
+              "status": "verified",
+              "reason": "Verified against git commit 142e868."
+            }
+          },
+          {
+            "card_id": "card-s11-resumed-log",
+            "specialist": "LogsAgent",
+            "source_type": "log",
+            "pointer": {
+              "log_id": "LOG-S11-002",
+              "ts": "2026-10-14T10:45:00Z",
+              "service": "transfers"
+            },
+            "snippet": "Transfer rejected: cutoff time 16:00 exceeded (evaluated utc hour: 10)",
+            "claim": "TXN-1009 logged as rejected at 10:45 UTC (16:15 IST).",
+            "stance": "supports",
+            "observed_at": "2026-10-14T10:05:02Z",
+            "github_permalink": null,
+            "verification": {
+              "status": "verified",
+              "reason": "Confirmed in logs.jsonl."
+            }
+          },
+          {
+            "card_id": "card-s11-resumed-rec",
+            "specialist": "RecordAgent",
+            "source_type": "record",
+            "pointer": {
+              "table": "transfers",
+              "id": "TXN-1009",
+              "field": "status"
+            },
+            "snippet": "transfer_id: TXN-1009, amount: 45000.0, status: REJECTED_CUTOFF",
+            "claim": "Ledger record confirms TXN-1009 rejected due to cutoff.",
+            "stance": "supports",
+            "observed_at": "2026-10-14T10:05:03Z",
+            "github_permalink": null,
+            "verification": {
+              "status": "verified",
+              "reason": "Confirmed in record_snapshot.json."
+            }
+          }
+        ],
+        "dropped_cards": [],
+        "verified_claims_count": 3,
+        "dropped_claims_count": 0,
+        "recommended_actions": [
+          "Review git commit and deploy patch to staging",
+          "Verify automated unit tests against seeded regression suite",
+          "Notify customer with approved customer reply draft"
+        ],
+        "workaround": null,
+        "questions_for_client": [],
+        "customer_reply_draft": "Thank you for providing transaction reference TXN-1009. We have confirmed that your transfer at 4:15 PM IST was incorrectly rejected due to an internal timezone clock configuration in our same-day cutoff evaluation service. A fix is underway.",
+        "leak_check": {
+          "passed": true,
+          "notes": [
+            "No raw internal file paths or stack traces found in customer draft"
+          ]
+        },
+        "jira_draft": {
+          "title": "Fix same-day cutoff evaluation for TXN-1009 in app/transfers/cutoff.py",
+          "description": "Transfer TXN-1009 was rejected at 4:15 PM IST because cutoff logic evaluated UTC clock against IST window.",
+          "repro_steps": [
+            "Initiate same-day transfer at 16:15 IST",
+            "Observe CutoffExceededException raised in app/transfers/cutoff.py"
+          ],
+          "evidence_links": [
+            "https://github.com/bank-org/transfers-demo-app/blob/142e868/app/transfers/cutoff.py#L20-L27"
+          ],
+          "labels": [
+            "bug",
+            "payments",
+            "timezone",
+            "client-resumed"
+          ]
+        },
+        "kb_gap": null,
+        "suggested_diagnostic_queries": [
+          "SELECT * FROM transfers WHERE transfer_id = 'TCK-1111'",
+          "grep -rn 'cutoff' app/transfers/"
+        ],
+        "decision": {
+          "status": "pending",
+          "by": null,
+          "reason": null,
+          "edits_diff": null,
+          "write_back_ref": null
+        },
+        "audit_ref": "sha256-audit-inv-s11-resumed",
+        "metrics": {
+          "tool_calls": 10,
+          "tokens": 3840,
+          "latency_ms": 820,
+          "cost_usd": 0.0042
+        }
+      }
+    }
+  ],
+  "report": {
+    "investigation_id": "inv-s11-resumed",
+    "ticket_id": "TCK-1111",
+    "scenario_id": "S11",
+    "mode_used": "replay",
+    "ticket_class": "CODE_DEFECT",
+    "severity": "P2",
+    "owner_team": "team-payments",
+    "summary": "Client clarification confirmed failure at 4:15 PM IST on TXN-1009; root cause pinpointed to cutoff window timezone defect in app/transfers/cutoff.py",
+    "routing_plan": {
+      "ticket_class": "CODE_DEFECT",
+      "severity": "P2",
+      "extracted_entities": {
+        "scenario": "S11",
+        "ticket_id": "TCK-1111"
+      },
+      "active_agents": [
+        "LogsAgent",
+        "CodeAgent",
+        "HistoryAgent",
+        "KnowledgeAgent",
+        "RecordAgent"
+      ],
+      "skipped_agents": {},
+      "max_tool_calls": 12,
+      "injection_detected": false,
+      "injection_note": null
+    },
+    "probable_root_cause": {
+      "hypothesis_id": "hyp-s11-resumed-1",
+      "statement": "Cutoff check in app/transfers/cutoff.py evaluates datetime.utcnow().hour >= 16 instead of converting to Asia/Kolkata timezone (IST), incorrectly blocking transfer TXN-1009 at 4:15 PM IST.",
+      "culprit_files": [
+        "app/transfers/cutoff.py"
+      ],
+      "culprit_commit": "142e868",
+      "supporting_card_ids": [
+        "card-s11-resumed-code",
+        "card-s11-resumed-log",
+        "card-s11-resumed-rec"
+      ],
+      "contradicting_card_ids": [],
+      "score": 0.93
+    },
+    "alternatives": [],
+    "contradictions": [],
+    "trust": {
+      "score": 0.86,
+      "band": "HIGH",
+      "policy_action": "CONCLUDE",
+      "components": {
+        "c_ver": 0.85,
+        "c_div": 0.8,
+        "c_spec": 0.9,
+        "c_time": 0.85,
+        "p_contra": 0,
+        "p_unver": 0
+      },
+      "rationale": "Client reply augmented context with exact TXN-1009 ID and 4:15 PM IST timestamp; trust jumped from 0.22 to 0.86 with conclusive evidence."
+    },
+    "verified_cards": [
+      {
+        "card_id": "card-s11-resumed-code",
+        "specialist": "CodeAgent",
+        "source_type": "code",
+        "pointer": {
+          "repo": "transfers-demo-app",
+          "path": "app/transfers/cutoff.py",
+          "line_start": 20,
+          "line_end": 27,
+          "sha": "142e868"
+        },
+        "snippet": "if current_time.hour >= 16:\n    raise CutoffExceededException(f\"Transfer rejected: cutoff time 16:00 exceeded (evaluated utc hour: {current_time.hour})\")",
+        "claim": "Cutoff window check evaluates UTC hour directly.",
+        "stance": "supports",
+        "observed_at": "2026-10-14T10:05:04Z",
+        "github_permalink": "https://github.com/bank-org/transfers-demo-app/blob/142e868/app/transfers/cutoff.py#L20-L27",
+        "verification": {
+          "status": "verified",
+          "reason": "Verified against git commit 142e868."
+        }
+      },
+      {
+        "card_id": "card-s11-resumed-log",
+        "specialist": "LogsAgent",
+        "source_type": "log",
+        "pointer": {
+          "log_id": "LOG-S11-002",
+          "ts": "2026-10-14T10:45:00Z",
+          "service": "transfers"
+        },
+        "snippet": "Transfer rejected: cutoff time 16:00 exceeded (evaluated utc hour: 10)",
+        "claim": "TXN-1009 logged as rejected at 10:45 UTC (16:15 IST).",
+        "stance": "supports",
+        "observed_at": "2026-10-14T10:05:02Z",
+        "github_permalink": null,
+        "verification": {
+          "status": "verified",
+          "reason": "Confirmed in logs.jsonl."
+        }
+      },
+      {
+        "card_id": "card-s11-resumed-rec",
+        "specialist": "RecordAgent",
+        "source_type": "record",
+        "pointer": {
+          "table": "transfers",
+          "id": "TXN-1009",
+          "field": "status"
+        },
+        "snippet": "transfer_id: TXN-1009, amount: 45000.0, status: REJECTED_CUTOFF",
+        "claim": "Ledger record confirms TXN-1009 rejected due to cutoff.",
+        "stance": "supports",
+        "observed_at": "2026-10-14T10:05:03Z",
+        "github_permalink": null,
+        "verification": {
+          "status": "verified",
+          "reason": "Confirmed in record_snapshot.json."
+        }
+      }
+    ],
+    "dropped_cards": [],
+    "verified_claims_count": 3,
+    "dropped_claims_count": 0,
+    "recommended_actions": [
+      "Review git commit and deploy patch to staging",
+      "Verify automated unit tests against seeded regression suite",
+      "Notify customer with approved customer reply draft"
+    ],
+    "workaround": null,
+    "questions_for_client": [],
+    "customer_reply_draft": "Thank you for providing transaction reference TXN-1009. We have confirmed that your transfer at 4:15 PM IST was incorrectly rejected due to an internal timezone clock configuration in our same-day cutoff evaluation service. A fix is underway.",
+    "leak_check": {
+      "passed": true,
+      "notes": [
+        "No raw internal file paths or stack traces found in customer draft"
+      ]
+    },
+    "jira_draft": {
+      "title": "Fix same-day cutoff evaluation for TXN-1009 in app/transfers/cutoff.py",
+      "description": "Transfer TXN-1009 was rejected at 4:15 PM IST because cutoff logic evaluated UTC clock against IST window.",
+      "repro_steps": [
+        "Initiate same-day transfer at 16:15 IST",
+        "Observe CutoffExceededException raised in app/transfers/cutoff.py"
+      ],
+      "evidence_links": [
+        "https://github.com/bank-org/transfers-demo-app/blob/142e868/app/transfers/cutoff.py#L20-L27"
+      ],
+      "labels": [
+        "bug",
+        "payments",
+        "timezone",
+        "client-resumed"
+      ]
+    },
+    "kb_gap": null,
+    "suggested_diagnostic_queries": [
+      "SELECT * FROM transfers WHERE transfer_id = 'TCK-1111'",
+      "grep -rn 'cutoff' app/transfers/"
+    ],
+    "decision": {
+      "status": "pending",
+      "by": null,
+      "reason": null,
+      "edits_diff": null,
+      "write_back_ref": null
+    },
+    "audit_ref": "sha256-audit-inv-s11-resumed",
+    "metrics": {
+      "tool_calls": 10,
+      "tokens": 3840,
+      "latency_ms": 820,
+      "cost_usd": 0.0042
+    }
+  }
+}

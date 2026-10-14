@@ -1,0 +1,5 @@
+{"log_id": "LOG-S02-001", "ts": "2026-10-14T05:35:10Z", "service": "fees", "level": "INFO", "trace_id": "tr-2040", "message": "Fee computed for transfer TXN-2040: amount=500.00, fee=6.25, tier=standard"}
+{"log_id": "LOG-S02-002", "ts": "2026-10-14T05:42:01Z", "service": "fees", "level": "INFO", "trace_id": "tr-2041", "message": "Calculating fee for transfer TXN-2041: amount=803.40, tier=standard, rate=0.0125"}
+{"log_id": "LOG-S02-003", "ts": "2026-10-14T05:42:01Z", "service": "fees", "level": "INFO", "trace_id": "tr-2041", "message": "Fee evaluated using round(803.40 * 0.0125, 2) yielding 10.05"}
+{"log_id": "LOG-S02-004", "ts": "2026-10-14T05:42:02Z", "service": "transfers", "level": "INFO", "trace_id": "tr-2041", "message": "Transfer TXN-2041 executed with principal=803.40, fee=10.05, total=813.45"}
+{"log_id": "LOG-S02-005", "ts": "2026-10-14T05:50:00Z", "service": "fees", "level": "INFO", "trace_id": "tr-2042", "message": "Fee computed for transfer TXN-2042: amount=1200.00, fee=15.00, tier=standard"}

@@ -1,0 +1,10 @@
+{
+  "id": "TCK-4004",
+  "scenario_id": "S04",
+  "channel": "portal",
+  "reporter_role": "client",
+  "created_at": "2026-10-14T15:40:00+05:30",
+  "text": "Beneficiary SMS was not delivered for transfer TXN-4015 from account 667788990011 to 223344556677. Vendor claims they never received confirmation SMS. Your SLA promises automated delivery with retries.",
+  "attachments": [],
+  "product_hint": "notifications"
+}
