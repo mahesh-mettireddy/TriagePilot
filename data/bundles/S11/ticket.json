@@ -1,0 +1,10 @@
+{
+  "id": "TCK-1111",
+  "scenario_id": "S11",
+  "channel": "portal",
+  "reporter_role": "client",
+  "created_at": "2026-10-14T16:20:00+05:30",
+  "text": "Transfers not working urgently. Please look into this right now as our operations are halted.",
+  "attachments": [],
+  "product_hint": "transfers"
+}

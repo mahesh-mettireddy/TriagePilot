@@ -1,0 +1,6 @@
+{"log_id": "LOG-S03-001", "ts": "2026-10-14T02:45:10.100Z", "service": "transfers", "level": "INFO", "trace_id": "tr-3011", "message": "POST /api/transfers received with header 'idempotency-key: ik-99281-a' for INR 15000.00"}
+{"log_id": "LOG-S03-002", "ts": "2026-10-14T02:45:10.102Z", "service": "transfers.idempotency", "level": "WARN", "trace_id": "tr-3011", "message": "check_idempotency_key: header 'Idempotency-Key' missing (lowercase key provided), bypassed cache"}
+{"log_id": "LOG-S03-003", "ts": "2026-10-14T02:45:10.105Z", "service": "transfers", "level": "INFO", "trace_id": "tr-3011", "message": "Debited account 445566778899 INR 15000.00 for TXN-3011"}
+{"log_id": "LOG-S03-004", "ts": "2026-10-14T02:45:10.115Z", "service": "transfers", "level": "INFO", "trace_id": "tr-3012", "message": "POST /api/transfers concurrent request received with header 'idempotency-key: ik-99281-a' for INR 15000.00"}
+{"log_id": "LOG-S03-005", "ts": "2026-10-14T02:45:10.117Z", "service": "transfers.idempotency", "level": "WARN", "trace_id": "tr-3012", "message": "check_idempotency_key: no mutex lock acquired, bypassing cache for lowercase header"}
+{"log_id": "LOG-S03-006", "ts": "2026-10-14T02:45:10.120Z", "service": "transfers", "level": "INFO", "trace_id": "tr-3012", "message": "Debited account 445566778899 INR 15000.00 for TXN-3012 (DUPLICATE DEBIT)"}

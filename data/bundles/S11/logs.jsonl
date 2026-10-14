@@ -1,0 +1,4 @@
+{"log_id": "LOG-S11-001", "ts": "2026-10-14T10:40:00Z", "service": "transfers", "level": "INFO", "trace_id": "tr-1008", "message": "Transfer TXN-1008 processed successfully"}
+{"log_id": "LOG-S11-002", "ts": "2026-10-14T10:45:00Z", "service": "transfers", "level": "ERROR", "trace_id": "tr-1009", "message": "Transfer rejected: cutoff time 16:00 exceeded (evaluated utc hour: 10)"}
+{"log_id": "LOG-S11-003", "ts": "2026-10-14T10:45:01Z", "service": "transfers.cutoff", "level": "WARN", "trace_id": "tr-1009", "message": "CutoffExceededException raised at app/transfers/cutoff.py:27 for TXN-1009"}
+{"log_id": "LOG-S11-004", "ts": "2026-10-14T10:50:00Z", "service": "transfers", "level": "INFO", "trace_id": "tr-1011", "message": "Next-day batch queued for TXN-1011"}

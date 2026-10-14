@@ -1,0 +1,30 @@
+scenario_id: S06
+ticket_class: CODE_DEFECT
+severity: P2
+owner_team: team-payments
+culprit_file: app/limits/daily_limit.py
+culprit_line_range:
+  start: 22
+  end: 32
+culprit_commit_subject: "feat(limits): add daily transfer limit checks (₹1,00,000 policy)"
+culprit_commit_sha: "f68c7f6"
+red_herring_commit_sha: "0710491"
+red_herring_commit_subject: "chore: bump httpx timeout config to 15s (CHG-410)"
+contradictions_expected:
+  - kind: BEHAVIOUR_MISMATCH
+    note: "Risk Policy DOC-LIMITS-01 specifies that transfers equal to ₹1,00,000 are permitted, but app/limits/daily_limit.py uses >= 100000 which blocks exact boundary amounts."
+has_vision_attachment: true
+attachment_file: screenshot.png
+root_cause_summary: "Boundary condition defect in app/limits/daily_limit.py checking 'transfer_amount >= DAILY_TRANSFER_LIMIT' instead of '>', blocking valid transfers of exactly ₹1,00,000. Commit 0710491 (httpx timeout bump) is an innocent red-herring."
+active_agents_expected:
+  - LogsAgent
+  - CodeAgent
+  - HistoryAgent
+  - KnowledgeAgent
+  - RecordAgent
+min_trust_score: 0.85
+policy_action: CONCLUDE
+tags:
+  - CODE_DEFECT
+  - RED_HERRING
+  - VISION

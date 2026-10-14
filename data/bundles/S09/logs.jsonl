@@ -1,0 +1,4 @@
+{"log_id": "LOG-S09-001", "ts": "2026-10-14T04:00:15Z", "service": "settlement.batch", "level": "INFO", "trace_id": "tr-batch-901", "message": "Enqueuing outbound NEFT settlement batch BATCH-901: count=24, amount=450000.00"}
+{"log_id": "LOG-S09-002", "ts": "2026-10-14T04:00:16Z", "service": "settlement.batch", "level": "WARN", "trace_id": "tr-batch-901", "message": "Settlement batch BATCH-901 deferred: RBI clearing holiday 'State Banking Clearing Holiday' on 2026-10-14. (Rule KE-104)"}
+{"log_id": "LOG-S09-003", "ts": "2026-10-14T04:00:16Z", "service": "settlement.batch", "level": "INFO", "trace_id": "tr-batch-901", "message": "Batch status updated to PENDING_SETTLEMENT; next scheduled cycle at 2026-10-15T08:00:00+05:30"}
+{"log_id": "LOG-S09-004", "ts": "2026-10-14T04:05:00Z", "service": "settlement.batch", "level": "INFO", "trace_id": "tr-batch-901", "message": "Alert notification dispatched to operations dashboard"}

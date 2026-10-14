@@ -1,0 +1,20 @@
+scenario_id: S09
+ticket_class: KNOWN_ERROR
+severity: P3
+owner_team: team-core-ledger
+known_error_id: KE-104
+contradictions_expected: []
+root_cause_summary: "Settlement batch BATCH-901 deferred due to RBI statutory banking holiday on 2026-10-14, matching Known Error KE-104. Batch will clear automatically at 08:00 IST on 2026-10-15."
+workaround: "No manual action required. Outbound NEFT queue resumes processing on next business morning at 08:00 IST. Transmit advisory to client."
+active_agents_expected:
+  - HistoryAgent
+  - LogsAgent
+skipped_agents_expected:
+  CodeAgent: "Pruned: Known error pattern matched; code analysis bypassed for fast-path"
+  RecordAgent: "Pruned: Batch or platform level known issue"
+  KnowledgeAgent: "Pruned: Known error repository provides operational workaround"
+min_trust_score: 0.88
+policy_action: CONCLUDE
+tags:
+  - KNOWN_ERROR
+  - FAST_PATH

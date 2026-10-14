@@ -1,0 +1,6 @@
+{"log_id": "LOG-S01-001", "ts": "2026-10-13T10:25:12Z", "service": "transfers", "level": "INFO", "trace_id": "tr-1007", "message": "Initiating same-day transfer TXN-1007 for amount INR 12000.00"}
+{"log_id": "LOG-S01-002", "ts": "2026-10-13T10:25:14Z", "service": "transfers", "level": "INFO", "trace_id": "tr-1007", "message": "Transfer TXN-1007 completed successfully"}
+{"log_id": "LOG-S01-003", "ts": "2026-10-13T10:29:45Z", "service": "transfers", "level": "INFO", "trace_id": "tr-1008", "message": "Transfer TXN-1008 processed successfully for INR 25000.00"}
+{"log_id": "LOG-S01-004", "ts": "2026-10-13T10:32:01Z", "service": "transfers", "level": "ERROR", "trace_id": "tr-1009", "message": "Transfer rejected: cutoff time 16:00 exceeded (evaluated utc hour: 10)"}
+{"log_id": "LOG-S01-005", "ts": "2026-10-13T10:32:02Z", "service": "transfers", "level": "WARN", "trace_id": "tr-1009", "message": "CutoffExceededException raised in app/transfers/cutoff.py for TXN-1009"}
+{"log_id": "LOG-S01-006", "ts": "2026-10-13T10:35:10Z", "service": "transfers", "level": "INFO", "trace_id": "tr-1010", "message": "Health check probe 200 OK"}

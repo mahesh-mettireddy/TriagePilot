@@ -1,0 +1,576 @@
+{
+  "scenario_id": "S04",
+  "events": [
+    {
+      "seq": 1,
+      "ts": "2026-10-14T10:00:00.010Z",
+      "type": "masking_done",
+      "data": {
+        "pii_redacted_count": 2,
+        "injection_detected": false,
+        "injection_note": null
+      }
+    },
+    {
+      "seq": 2,
+      "ts": "2026-10-14T10:00:00.080Z",
+      "type": "plan_created",
+      "data": {
+        "ticket_class": "CODE_DEFECT",
+        "severity": "P3",
+        "extracted_entities": {
+          "scenario": "S04",
+          "ticket_id": "TCK-4004"
+        },
+        "active_agents": [
+          "LogsAgent",
+          "CodeAgent",
+          "HistoryAgent",
+          "KnowledgeAgent",
+          "RecordAgent"
+        ],
+        "skipped_agents": {},
+        "max_tool_calls": 12,
+        "injection_detected": false,
+        "injection_note": null
+      }
+    },
+    {
+      "seq": 3,
+      "ts": "2026-10-14T10:00:00.280Z",
+      "type": "card_added",
+      "data": {
+        "card_id": "card-s04-code",
+        "specialist": "CodeAgent",
+        "source_type": "code",
+        "pointer": {
+          "repo": "transfers-demo-app",
+          "path": "app/notifications/sms.py",
+          "line_start": 22,
+          "line_end": 35,
+          "sha": "a24bbe3"
+        },
+        "snippet": "delivery_success = _call_gateway(recipient, message)\nif not delivery_success:\n    raise SMSDeliveryException(f\"Failed to deliver SMS to {recipient}\")",
+        "claim": "SMS dispatch only attempts delivery once and lacks retry loop.",
+        "stance": "supports",
+        "observed_at": "2026-10-14T10:00:04Z",
+        "github_permalink": "https://github.com/bank-org/transfers-demo-app/blob/a24bbe3/app/notifications/sms.py#L22-L35",
+        "verification": {
+          "status": "verified",
+          "reason": "Verified against git blame commit a24bbe3."
+        }
+      }
+    },
+    {
+      "seq": 4,
+      "ts": "2026-10-14T10:00:00.310Z",
+      "type": "verifier_result",
+      "data": {
+        "card_id": "card-s04-code",
+        "status": "verified",
+        "reason": "Verified against git blame commit a24bbe3."
+      }
+    },
+    {
+      "seq": 5,
+      "ts": "2026-10-14T10:00:00.320Z",
+      "type": "card_added",
+      "data": {
+        "card_id": "card-s04-doc",
+        "specialist": "KnowledgeAgent",
+        "source_type": "doc",
+        "pointer": {
+          "space": "RUNBOOKS",
+          "page_id": "DOC-SMS-01",
+          "section": "Retry Policy",
+          "last_updated": "2025-11-20T08:00:00Z"
+        },
+        "snippet": "SMS notifications automatically retry 3 times with exponential backoff (1s, 2s, 4s) before marking delivery as failed.",
+        "claim": "Operational runbook asserts 3 automated retries.",
+        "stance": "contradicts",
+        "observed_at": "2026-10-14T10:00:02Z",
+        "github_permalink": null,
+        "verification": {
+          "status": "verified",
+          "reason": "Doc section verified in docs.json."
+        }
+      }
+    },
+    {
+      "seq": 6,
+      "ts": "2026-10-14T10:00:00.350Z",
+      "type": "verifier_result",
+      "data": {
+        "card_id": "card-s04-doc",
+        "status": "verified",
+        "reason": "Doc section verified in docs.json."
+      }
+    },
+    {
+      "seq": 7,
+      "ts": "2026-10-14T10:00:00.360Z",
+      "type": "card_added",
+      "data": {
+        "card_id": "card-s04-log-err",
+        "specialist": "LogsAgent",
+        "source_type": "log",
+        "pointer": {
+          "log_id": "LOG-SMS-402",
+          "ts": "2026-10-14T10:12:01Z",
+          "service": "notifications.sms"
+        },
+        "snippet": "SMSDeliveryException: Failed to deliver SMS to recipient. Carrier returned HTTP 503 (attempts: 1, retries: 0)",
+        "claim": "Gateway failure logged with 0 retries.",
+        "stance": "supports",
+        "observed_at": "2026-10-14T10:00:03Z",
+        "github_permalink": null,
+        "verification": {
+          "status": "verified",
+          "reason": "Verified in logs.jsonl."
+        }
+      }
+    },
+    {
+      "seq": 8,
+      "ts": "2026-10-14T10:00:00.390Z",
+      "type": "verifier_result",
+      "data": {
+        "card_id": "card-s04-log-err",
+        "status": "verified",
+        "reason": "Verified in logs.jsonl."
+      }
+    },
+    {
+      "seq": 9,
+      "ts": "2026-10-14T10:00:00.600Z",
+      "type": "contradiction_found",
+      "data": {
+        "kind": "BEHAVIOUR_MISMATCH",
+        "deterministic": false,
+        "card_a": "card-s04-doc",
+        "card_b": "card-s04-code",
+        "note": "Runbook DOC-SMS-01 claims SMS automatically retries 3 times with exponential backoff, but app/notifications/sms.py fails immediately on attempt 1 without retries."
+      }
+    },
+    {
+      "seq": 10,
+      "ts": "2026-10-14T10:00:00.620Z",
+      "type": "contradiction_found",
+      "data": {
+        "kind": "STALE_DOC_FLAG",
+        "deterministic": true,
+        "card_a": "card-s04-doc",
+        "card_b": "card-s04-code",
+        "note": "Runbook DOC-SMS-01 was last updated 2025-11-20, while commit a24bbe3 (CHG-401) refactored SMS dispatch on 2026-09-15."
+      }
+    },
+    {
+      "seq": 11,
+      "ts": "2026-10-14T10:00:00.650Z",
+      "type": "trust_update",
+      "data": {
+        "score": 0.86,
+        "band": "HIGH",
+        "policy_action": "CONCLUDE",
+        "components": {
+          "c_ver": 0.85,
+          "c_div": 0.8,
+          "c_spec": 0.9,
+          "c_time": 0.85,
+          "p_contra": 0.15,
+          "p_unver": 0
+        },
+        "rationale": "Document-to-code contradiction resolved; prompt injection in log neutralized; root cause verified against git history."
+      }
+    },
+    {
+      "seq": 12,
+      "ts": "2026-10-14T10:00:00.820Z",
+      "type": "report_ready",
+      "data": {
+        "investigation_id": "inv-s04",
+        "ticket_id": "TCK-4004",
+        "scenario_id": "S04",
+        "mode_used": "replay",
+        "ticket_class": "CODE_DEFECT",
+        "severity": "P3",
+        "owner_team": "team-comms",
+        "summary": "SMS notification dropped on transient 503 error due to removed retry loop (CHG-401) and stale Runbook DOC-SMS-01",
+        "routing_plan": {
+          "ticket_class": "CODE_DEFECT",
+          "severity": "P3",
+          "extracted_entities": {
+            "scenario": "S04",
+            "ticket_id": "TCK-4004"
+          },
+          "active_agents": [
+            "LogsAgent",
+            "CodeAgent",
+            "HistoryAgent",
+            "KnowledgeAgent",
+            "RecordAgent"
+          ],
+          "skipped_agents": {},
+          "max_tool_calls": 12,
+          "injection_detected": false,
+          "injection_note": null
+        },
+        "probable_root_cause": {
+          "hypothesis_id": "hyp-s04-1",
+          "statement": "Commit a24bbe3 removed the 3-attempt retry loop from app/notifications/sms.py, causing immediate delivery failure on transient carrier 503 errors while documentation DOC-SMS-01 remained stale.",
+          "culprit_files": [
+            "app/notifications/sms.py"
+          ],
+          "culprit_commit": "a24bbe3",
+          "supporting_card_ids": [
+            "card-s04-code",
+            "card-s04-log-err"
+          ],
+          "contradicting_card_ids": [],
+          "score": 0.91
+        },
+        "alternatives": [],
+        "contradictions": [
+          {
+            "kind": "BEHAVIOUR_MISMATCH",
+            "deterministic": false,
+            "card_a": "card-s04-doc",
+            "card_b": "card-s04-code",
+            "note": "Runbook DOC-SMS-01 claims SMS automatically retries 3 times with exponential backoff, but app/notifications/sms.py fails immediately on attempt 1 without retries."
+          },
+          {
+            "kind": "STALE_DOC_FLAG",
+            "deterministic": true,
+            "card_a": "card-s04-doc",
+            "card_b": "card-s04-code",
+            "note": "Runbook DOC-SMS-01 was last updated 2025-11-20, while commit a24bbe3 (CHG-401) refactored SMS dispatch on 2026-09-15."
+          }
+        ],
+        "trust": {
+          "score": 0.86,
+          "band": "HIGH",
+          "policy_action": "CONCLUDE",
+          "components": {
+            "c_ver": 0.85,
+            "c_div": 0.8,
+            "c_spec": 0.9,
+            "c_time": 0.85,
+            "p_contra": 0.15,
+            "p_unver": 0
+          },
+          "rationale": "Document-to-code contradiction resolved; prompt injection in log neutralized; root cause verified against git history."
+        },
+        "verified_cards": [
+          {
+            "card_id": "card-s04-code",
+            "specialist": "CodeAgent",
+            "source_type": "code",
+            "pointer": {
+              "repo": "transfers-demo-app",
+              "path": "app/notifications/sms.py",
+              "line_start": 22,
+              "line_end": 35,
+              "sha": "a24bbe3"
+            },
+            "snippet": "delivery_success = _call_gateway(recipient, message)\nif not delivery_success:\n    raise SMSDeliveryException(f\"Failed to deliver SMS to {recipient}\")",
+            "claim": "SMS dispatch only attempts delivery once and lacks retry loop.",
+            "stance": "supports",
+            "observed_at": "2026-10-14T10:00:04Z",
+            "github_permalink": "https://github.com/bank-org/transfers-demo-app/blob/a24bbe3/app/notifications/sms.py#L22-L35",
+            "verification": {
+              "status": "verified",
+              "reason": "Verified against git blame commit a24bbe3."
+            }
+          },
+          {
+            "card_id": "card-s04-doc",
+            "specialist": "KnowledgeAgent",
+            "source_type": "doc",
+            "pointer": {
+              "space": "RUNBOOKS",
+              "page_id": "DOC-SMS-01",
+              "section": "Retry Policy",
+              "last_updated": "2025-11-20T08:00:00Z"
+            },
+            "snippet": "SMS notifications automatically retry 3 times with exponential backoff (1s, 2s, 4s) before marking delivery as failed.",
+            "claim": "Operational runbook asserts 3 automated retries.",
+            "stance": "contradicts",
+            "observed_at": "2026-10-14T10:00:02Z",
+            "github_permalink": null,
+            "verification": {
+              "status": "verified",
+              "reason": "Doc section verified in docs.json."
+            }
+          },
+          {
+            "card_id": "card-s04-log-err",
+            "specialist": "LogsAgent",
+            "source_type": "log",
+            "pointer": {
+              "log_id": "LOG-SMS-402",
+              "ts": "2026-10-14T10:12:01Z",
+              "service": "notifications.sms"
+            },
+            "snippet": "SMSDeliveryException: Failed to deliver SMS to recipient. Carrier returned HTTP 503 (attempts: 1, retries: 0)",
+            "claim": "Gateway failure logged with 0 retries.",
+            "stance": "supports",
+            "observed_at": "2026-10-14T10:00:03Z",
+            "github_permalink": null,
+            "verification": {
+              "status": "verified",
+              "reason": "Verified in logs.jsonl."
+            }
+          }
+        ],
+        "dropped_cards": [],
+        "verified_claims_count": 3,
+        "dropped_claims_count": 0,
+        "recommended_actions": [
+          "Review git commit and deploy patch to staging",
+          "Verify automated unit tests against seeded regression suite",
+          "Notify customer with approved customer reply draft"
+        ],
+        "workaround": null,
+        "questions_for_client": [],
+        "customer_reply_draft": "We investigated the missing SMS alert for transfer TXN-4015. While the transfer itself completed successfully, the downstream telecommunication provider experienced a momentary 503 outage. A re-notification has been triggered, and we are enhancing our delivery retry system.",
+        "leak_check": {
+          "passed": true,
+          "notes": [
+            "No raw internal file paths or stack traces found in customer draft"
+          ]
+        },
+        "jira_draft": {
+          "title": "Restore retry loop in app/notifications/sms.py and align with DOC-SMS-01",
+          "description": "Refactor commit a24bbe3 removed retry logic, causing permanent notification loss on transient carrier 503 spikes.",
+          "repro_steps": [
+            "Simulate 503 response from carrier gateway",
+            "Observe SMS fails on attempt 1 without retries"
+          ],
+          "evidence_links": [
+            "https://github.com/bank-org/transfers-demo-app/blob/a24bbe3/app/notifications/sms.py#L22-L35"
+          ],
+          "labels": [
+            "bug",
+            "notifications",
+            "sms",
+            "stale-doc"
+          ]
+        },
+        "kb_gap": {
+          "page_id": "DOC-SMS-01",
+          "issue": "Runbook DOC-SMS-01 out of sync with code: claims 3 retries exist, but commit a24bbe3 removed them."
+        },
+        "suggested_diagnostic_queries": [
+          "SELECT * FROM transfers WHERE transfer_id = 'TCK-4004'",
+          "grep -rn 'cutoff' app/transfers/"
+        ],
+        "decision": {
+          "status": "pending",
+          "by": null,
+          "reason": null,
+          "edits_diff": null,
+          "write_back_ref": null
+        },
+        "audit_ref": "sha256-audit-inv-s04",
+        "metrics": {
+          "tool_calls": 10,
+          "tokens": 3840,
+          "latency_ms": 820,
+          "cost_usd": 0.0042
+        }
+      }
+    }
+  ],
+  "report": {
+    "investigation_id": "inv-s04",
+    "ticket_id": "TCK-4004",
+    "scenario_id": "S04",
+    "mode_used": "replay",
+    "ticket_class": "CODE_DEFECT",
+    "severity": "P3",
+    "owner_team": "team-comms",
+    "summary": "SMS notification dropped on transient 503 error due to removed retry loop (CHG-401) and stale Runbook DOC-SMS-01",
+    "routing_plan": {
+      "ticket_class": "CODE_DEFECT",
+      "severity": "P3",
+      "extracted_entities": {
+        "scenario": "S04",
+        "ticket_id": "TCK-4004"
+      },
+      "active_agents": [
+        "LogsAgent",
+        "CodeAgent",
+        "HistoryAgent",
+        "KnowledgeAgent",
+        "RecordAgent"
+      ],
+      "skipped_agents": {},
+      "max_tool_calls": 12,
+      "injection_detected": false,
+      "injection_note": null
+    },
+    "probable_root_cause": {
+      "hypothesis_id": "hyp-s04-1",
+      "statement": "Commit a24bbe3 removed the 3-attempt retry loop from app/notifications/sms.py, causing immediate delivery failure on transient carrier 503 errors while documentation DOC-SMS-01 remained stale.",
+      "culprit_files": [
+        "app/notifications/sms.py"
+      ],
+      "culprit_commit": "a24bbe3",
+      "supporting_card_ids": [
+        "card-s04-code",
+        "card-s04-log-err"
+      ],
+      "contradicting_card_ids": [],
+      "score": 0.91
+    },
+    "alternatives": [],
+    "contradictions": [
+      {
+        "kind": "BEHAVIOUR_MISMATCH",
+        "deterministic": false,
+        "card_a": "card-s04-doc",
+        "card_b": "card-s04-code",
+        "note": "Runbook DOC-SMS-01 claims SMS automatically retries 3 times with exponential backoff, but app/notifications/sms.py fails immediately on attempt 1 without retries."
+      },
+      {
+        "kind": "STALE_DOC_FLAG",
+        "deterministic": true,
+        "card_a": "card-s04-doc",
+        "card_b": "card-s04-code",
+        "note": "Runbook DOC-SMS-01 was last updated 2025-11-20, while commit a24bbe3 (CHG-401) refactored SMS dispatch on 2026-09-15."
+      }
+    ],
+    "trust": {
+      "score": 0.86,
+      "band": "HIGH",
+      "policy_action": "CONCLUDE",
+      "components": {
+        "c_ver": 0.85,
+        "c_div": 0.8,
+        "c_spec": 0.9,
+        "c_time": 0.85,
+        "p_contra": 0.15,
+        "p_unver": 0
+      },
+      "rationale": "Document-to-code contradiction resolved; prompt injection in log neutralized; root cause verified against git history."
+    },
+    "verified_cards": [
+      {
+        "card_id": "card-s04-code",
+        "specialist": "CodeAgent",
+        "source_type": "code",
+        "pointer": {
+          "repo": "transfers-demo-app",
+          "path": "app/notifications/sms.py",
+          "line_start": 22,
+          "line_end": 35,
+          "sha": "a24bbe3"
+        },
+        "snippet": "delivery_success = _call_gateway(recipient, message)\nif not delivery_success:\n    raise SMSDeliveryException(f\"Failed to deliver SMS to {recipient}\")",
+        "claim": "SMS dispatch only attempts delivery once and lacks retry loop.",
+        "stance": "supports",
+        "observed_at": "2026-10-14T10:00:04Z",
+        "github_permalink": "https://github.com/bank-org/transfers-demo-app/blob/a24bbe3/app/notifications/sms.py#L22-L35",
+        "verification": {
+          "status": "verified",
+          "reason": "Verified against git blame commit a24bbe3."
+        }
+      },
+      {
+        "card_id": "card-s04-doc",
+        "specialist": "KnowledgeAgent",
+        "source_type": "doc",
+        "pointer": {
+          "space": "RUNBOOKS",
+          "page_id": "DOC-SMS-01",
+          "section": "Retry Policy",
+          "last_updated": "2025-11-20T08:00:00Z"
+        },
+        "snippet": "SMS notifications automatically retry 3 times with exponential backoff (1s, 2s, 4s) before marking delivery as failed.",
+        "claim": "Operational runbook asserts 3 automated retries.",
+        "stance": "contradicts",
+        "observed_at": "2026-10-14T10:00:02Z",
+        "github_permalink": null,
+        "verification": {
+          "status": "verified",
+          "reason": "Doc section verified in docs.json."
+        }
+      },
+      {
+        "card_id": "card-s04-log-err",
+        "specialist": "LogsAgent",
+        "source_type": "log",
+        "pointer": {
+          "log_id": "LOG-SMS-402",
+          "ts": "2026-10-14T10:12:01Z",
+          "service": "notifications.sms"
+        },
+        "snippet": "SMSDeliveryException: Failed to deliver SMS to recipient. Carrier returned HTTP 503 (attempts: 1, retries: 0)",
+        "claim": "Gateway failure logged with 0 retries.",
+        "stance": "supports",
+        "observed_at": "2026-10-14T10:00:03Z",
+        "github_permalink": null,
+        "verification": {
+          "status": "verified",
+          "reason": "Verified in logs.jsonl."
+        }
+      }
+    ],
+    "dropped_cards": [],
+    "verified_claims_count": 3,
+    "dropped_claims_count": 0,
+    "recommended_actions": [
+      "Review git commit and deploy patch to staging",
+      "Verify automated unit tests against seeded regression suite",
+      "Notify customer with approved customer reply draft"
+    ],
+    "workaround": null,
+    "questions_for_client": [],
+    "customer_reply_draft": "We investigated the missing SMS alert for transfer TXN-4015. While the transfer itself completed successfully, the downstream telecommunication provider experienced a momentary 503 outage. A re-notification has been triggered, and we are enhancing our delivery retry system.",
+    "leak_check": {
+      "passed": true,
+      "notes": [
+        "No raw internal file paths or stack traces found in customer draft"
+      ]
+    },
+    "jira_draft": {
+      "title": "Restore retry loop in app/notifications/sms.py and align with DOC-SMS-01",
+      "description": "Refactor commit a24bbe3 removed retry logic, causing permanent notification loss on transient carrier 503 spikes.",
+      "repro_steps": [
+        "Simulate 503 response from carrier gateway",
+        "Observe SMS fails on attempt 1 without retries"
+      ],
+      "evidence_links": [
+        "https://github.com/bank-org/transfers-demo-app/blob/a24bbe3/app/notifications/sms.py#L22-L35"
+      ],
+      "labels": [
+        "bug",
+        "notifications",
+        "sms",
+        "stale-doc"
+      ]
+    },
+    "kb_gap": {
+      "page_id": "DOC-SMS-01",
+      "issue": "Runbook DOC-SMS-01 out of sync with code: claims 3 retries exist, but commit a24bbe3 removed them."
+    },
+    "suggested_diagnostic_queries": [
+      "SELECT * FROM transfers WHERE transfer_id = 'TCK-4004'",
+      "grep -rn 'cutoff' app/transfers/"
+    ],
+    "decision": {
+      "status": "pending",
+      "by": null,
+      "reason": null,
+      "edits_diff": null,
+      "write_back_ref": null
+    },
+    "audit_ref": "sha256-audit-inv-s04",
+    "metrics": {
+      "tool_calls": 10,
+      "tokens": 3840,
+      "latency_ms": 820,
+      "cost_usd": 0.0042
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "transfer_id": "TXN-4015",
+  "sender_account": "[ACCT_REDACTED]",
+  "beneficiary_account": "[ACCT_REDACTED]",
+  "amount": 28500.0,
+  "transfer_type": "SAME_DAY",
+  "status": "COMPLETED",
+  "sms_status": "FAILED",
+  "sms_attempts": 1,
+  "sms_max_retries_configured": 0,
+  "sms_error": "Carrier returned HTTP 503",
+  "created_at": "2026-10-14T10:12:01Z",
+  "trace_id": "tr-sms-4015"
+}

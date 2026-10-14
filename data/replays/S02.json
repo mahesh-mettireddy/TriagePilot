@@ -1,0 +1,453 @@
+{
+  "scenario_id": "S02",
+  "events": [
+    {
+      "seq": 1,
+      "ts": "2026-10-14T10:00:00.010Z",
+      "type": "masking_done",
+      "data": {
+        "pii_redacted_count": 2,
+        "injection_detected": false,
+        "injection_note": null
+      }
+    },
+    {
+      "seq": 2,
+      "ts": "2026-10-14T10:00:00.080Z",
+      "type": "plan_created",
+      "data": {
+        "ticket_class": "DATA_ISSUE",
+        "severity": "P3",
+        "extracted_entities": {
+          "scenario": "S02",
+          "ticket_id": "TCK-2041"
+        },
+        "active_agents": [
+          "RecordAgent",
+          "LogsAgent",
+          "CodeAgent",
+          "KnowledgeAgent"
+        ],
+        "skipped_agents": {
+          "HistoryAgent": "Pruned: Specific record state reconciliation prioritized"
+        },
+        "max_tool_calls": 12,
+        "injection_detected": false,
+        "injection_note": null
+      }
+    },
+    {
+      "seq": 3,
+      "ts": "2026-10-14T10:00:00.180Z",
+      "type": "agent_skipped",
+      "data": {
+        "agent": "HistoryAgent",
+        "reason": "Pruned: Specific record state reconciliation prioritized"
+      }
+    },
+    {
+      "seq": 4,
+      "ts": "2026-10-14T10:00:00.300Z",
+      "type": "card_added",
+      "data": {
+        "card_id": "card-s02-rec",
+        "specialist": "RecordAgent",
+        "source_type": "record",
+        "pointer": {
+          "table": "transfers",
+          "id": "TXN-2041",
+          "field": "fee"
+        },
+        "snippet": "transfer_id: TXN-2041, amount: 803.4, fee: 10.05, expected_fee: 10.04",
+        "claim": "Transfer record TXN-2041 fee billed as 10.05.",
+        "stance": "supports",
+        "observed_at": "2026-10-14T10:00:02Z",
+        "github_permalink": null,
+        "verification": {
+          "status": "verified",
+          "reason": "Record snapshot verified in database store."
+        }
+      }
+    },
+    {
+      "seq": 5,
+      "ts": "2026-10-14T10:00:00.330Z",
+      "type": "verifier_result",
+      "data": {
+        "card_id": "card-s02-rec",
+        "status": "verified",
+        "reason": "Record snapshot verified in database store."
+      }
+    },
+    {
+      "seq": 6,
+      "ts": "2026-10-14T10:00:00.340Z",
+      "type": "card_added",
+      "data": {
+        "card_id": "card-s02-code",
+        "specialist": "CodeAgent",
+        "source_type": "code",
+        "pointer": {
+          "repo": "transfers-demo-app",
+          "path": "app/fees/calculator.py",
+          "line_start": 18,
+          "line_end": 23,
+          "sha": "3778ed8"
+        },
+        "snippet": "fee = round(amount * rate, 2)\nreturn fee",
+        "claim": "Fee calculation performs float multiplication instead of high-precision Decimal.",
+        "stance": "supports",
+        "observed_at": "2026-10-14T10:00:04Z",
+        "github_permalink": "https://github.com/bank-org/transfers-demo-app/blob/3778ed8/app/fees/calculator.py#L18-L23",
+        "verification": {
+          "status": "verified",
+          "reason": "Matches code in client repository."
+        }
+      }
+    },
+    {
+      "seq": 7,
+      "ts": "2026-10-14T10:00:00.370Z",
+      "type": "verifier_result",
+      "data": {
+        "card_id": "card-s02-code",
+        "status": "verified",
+        "reason": "Matches code in client repository."
+      }
+    },
+    {
+      "seq": 8,
+      "ts": "2026-10-14T10:00:00.650Z",
+      "type": "trust_update",
+      "data": {
+        "score": 0.89,
+        "band": "HIGH",
+        "policy_action": "CONCLUDE",
+        "components": {
+          "c_ver": 0.85,
+          "c_div": 0.8,
+          "c_spec": 0.9,
+          "c_time": 0.85,
+          "p_contra": 0,
+          "p_unver": 0
+        },
+        "rationale": "Corroborated by RecordPort snapshot, calculation log trace, and source code float arithmetic."
+      }
+    },
+    {
+      "seq": 9,
+      "ts": "2026-10-14T10:00:00.820Z",
+      "type": "report_ready",
+      "data": {
+        "investigation_id": "inv-s02",
+        "ticket_id": "TCK-2041",
+        "scenario_id": "S02",
+        "mode_used": "replay",
+        "ticket_class": "DATA_ISSUE",
+        "severity": "P3",
+        "owner_team": "team-core-ledger",
+        "summary": "Binary float drift in round(amount * 0.0125, 2) produces 1-paisa calculation error on transfer TXN-2041",
+        "routing_plan": {
+          "ticket_class": "DATA_ISSUE",
+          "severity": "P3",
+          "extracted_entities": {
+            "scenario": "S02",
+            "ticket_id": "TCK-2041"
+          },
+          "active_agents": [
+            "RecordAgent",
+            "LogsAgent",
+            "CodeAgent",
+            "KnowledgeAgent"
+          ],
+          "skipped_agents": {
+            "HistoryAgent": "Pruned: Specific record state reconciliation prioritized"
+          },
+          "max_tool_calls": 12,
+          "injection_detected": false,
+          "injection_note": null
+        },
+        "probable_root_cause": {
+          "hypothesis_id": "hyp-s02-1",
+          "statement": "Fee computation in app/fees/calculator.py uses standard Python float multiplication and round(), suffering binary floating point drift on INR 803.40 (computed as 10.05 instead of 10.04).",
+          "culprit_files": [
+            "app/fees/calculator.py"
+          ],
+          "culprit_commit": "3778ed8",
+          "supporting_card_ids": [
+            "card-s02-rec",
+            "card-s02-code"
+          ],
+          "contradicting_card_ids": [],
+          "score": 0.95
+        },
+        "alternatives": [],
+        "contradictions": [],
+        "trust": {
+          "score": 0.89,
+          "band": "HIGH",
+          "policy_action": "CONCLUDE",
+          "components": {
+            "c_ver": 0.85,
+            "c_div": 0.8,
+            "c_spec": 0.9,
+            "c_time": 0.85,
+            "p_contra": 0,
+            "p_unver": 0
+          },
+          "rationale": "Corroborated by RecordPort snapshot, calculation log trace, and source code float arithmetic."
+        },
+        "verified_cards": [
+          {
+            "card_id": "card-s02-rec",
+            "specialist": "RecordAgent",
+            "source_type": "record",
+            "pointer": {
+              "table": "transfers",
+              "id": "TXN-2041",
+              "field": "fee"
+            },
+            "snippet": "transfer_id: TXN-2041, amount: 803.4, fee: 10.05, expected_fee: 10.04",
+            "claim": "Transfer record TXN-2041 fee billed as 10.05.",
+            "stance": "supports",
+            "observed_at": "2026-10-14T10:00:02Z",
+            "github_permalink": null,
+            "verification": {
+              "status": "verified",
+              "reason": "Record snapshot verified in database store."
+            }
+          },
+          {
+            "card_id": "card-s02-code",
+            "specialist": "CodeAgent",
+            "source_type": "code",
+            "pointer": {
+              "repo": "transfers-demo-app",
+              "path": "app/fees/calculator.py",
+              "line_start": 18,
+              "line_end": 23,
+              "sha": "3778ed8"
+            },
+            "snippet": "fee = round(amount * rate, 2)\nreturn fee",
+            "claim": "Fee calculation performs float multiplication instead of high-precision Decimal.",
+            "stance": "supports",
+            "observed_at": "2026-10-14T10:00:04Z",
+            "github_permalink": "https://github.com/bank-org/transfers-demo-app/blob/3778ed8/app/fees/calculator.py#L18-L23",
+            "verification": {
+              "status": "verified",
+              "reason": "Matches code in client repository."
+            }
+          }
+        ],
+        "dropped_cards": [],
+        "verified_claims_count": 2,
+        "dropped_claims_count": 0,
+        "recommended_actions": [
+          "Review git commit and deploy patch to staging",
+          "Verify automated unit tests against seeded regression suite",
+          "Notify customer with approved customer reply draft"
+        ],
+        "workaround": null,
+        "questions_for_client": [],
+        "customer_reply_draft": "We investigated transaction TXN-2041 and confirmed that an internal floating-point rounding issue calculated a fee of INR 10.05 instead of INR 10.04. A 1-paisa credit adjustment has been initiated to your account, and our ledger calculation service is being updated.",
+        "leak_check": {
+          "passed": true,
+          "notes": [
+            "No raw internal file paths or stack traces found in customer draft"
+          ]
+        },
+        "jira_draft": {
+          "title": "Migrate fee calculation in app/fees/calculator.py from float to Decimal",
+          "description": "Binary floating-point arithmetic causes 1-paisa rounding discrepancies on specific amounts (such as 803.40 producing 10.05 rather than 10.04).",
+          "repro_steps": [
+            "Call calculate_transfer_fee(803.40, \"standard\")",
+            "Observe return value is 10.05 instead of Decimal(\"10.04\")"
+          ],
+          "evidence_links": [
+            "https://github.com/bank-org/transfers-demo-app/blob/3778ed8/app/fees/calculator.py#L18-L23"
+          ],
+          "labels": [
+            "bug",
+            "ledger",
+            "fees",
+            "precision"
+          ]
+        },
+        "kb_gap": null,
+        "suggested_diagnostic_queries": [
+          "SELECT * FROM transfers WHERE transfer_id = 'TCK-2041'",
+          "grep -rn 'cutoff' app/transfers/"
+        ],
+        "decision": {
+          "status": "pending",
+          "by": null,
+          "reason": null,
+          "edits_diff": null,
+          "write_back_ref": null
+        },
+        "audit_ref": "sha256-audit-inv-s02",
+        "metrics": {
+          "tool_calls": 8,
+          "tokens": 3840,
+          "latency_ms": 820,
+          "cost_usd": 0.0042
+        }
+      }
+    }
+  ],
+  "report": {
+    "investigation_id": "inv-s02",
+    "ticket_id": "TCK-2041",
+    "scenario_id": "S02",
+    "mode_used": "replay",
+    "ticket_class": "DATA_ISSUE",
+    "severity": "P3",
+    "owner_team": "team-core-ledger",
+    "summary": "Binary float drift in round(amount * 0.0125, 2) produces 1-paisa calculation error on transfer TXN-2041",
+    "routing_plan": {
+      "ticket_class": "DATA_ISSUE",
+      "severity": "P3",
+      "extracted_entities": {
+        "scenario": "S02",
+        "ticket_id": "TCK-2041"
+      },
+      "active_agents": [
+        "RecordAgent",
+        "LogsAgent",
+        "CodeAgent",
+        "KnowledgeAgent"
+      ],
+      "skipped_agents": {
+        "HistoryAgent": "Pruned: Specific record state reconciliation prioritized"
+      },
+      "max_tool_calls": 12,
+      "injection_detected": false,
+      "injection_note": null
+    },
+    "probable_root_cause": {
+      "hypothesis_id": "hyp-s02-1",
+      "statement": "Fee computation in app/fees/calculator.py uses standard Python float multiplication and round(), suffering binary floating point drift on INR 803.40 (computed as 10.05 instead of 10.04).",
+      "culprit_files": [
+        "app/fees/calculator.py"
+      ],
+      "culprit_commit": "3778ed8",
+      "supporting_card_ids": [
+        "card-s02-rec",
+        "card-s02-code"
+      ],
+      "contradicting_card_ids": [],
+      "score": 0.95
+    },
+    "alternatives": [],
+    "contradictions": [],
+    "trust": {
+      "score": 0.89,
+      "band": "HIGH",
+      "policy_action": "CONCLUDE",
+      "components": {
+        "c_ver": 0.85,
+        "c_div": 0.8,
+        "c_spec": 0.9,
+        "c_time": 0.85,
+        "p_contra": 0,
+        "p_unver": 0
+      },
+      "rationale": "Corroborated by RecordPort snapshot, calculation log trace, and source code float arithmetic."
+    },
+    "verified_cards": [
+      {
+        "card_id": "card-s02-rec",
+        "specialist": "RecordAgent",
+        "source_type": "record",
+        "pointer": {
+          "table": "transfers",
+          "id": "TXN-2041",
+          "field": "fee"
+        },
+        "snippet": "transfer_id: TXN-2041, amount: 803.4, fee: 10.05, expected_fee: 10.04",
+        "claim": "Transfer record TXN-2041 fee billed as 10.05.",
+        "stance": "supports",
+        "observed_at": "2026-10-14T10:00:02Z",
+        "github_permalink": null,
+        "verification": {
+          "status": "verified",
+          "reason": "Record snapshot verified in database store."
+        }
+      },
+      {
+        "card_id": "card-s02-code",
+        "specialist": "CodeAgent",
+        "source_type": "code",
+        "pointer": {
+          "repo": "transfers-demo-app",
+          "path": "app/fees/calculator.py",
+          "line_start": 18,
+          "line_end": 23,
+          "sha": "3778ed8"
+        },
+        "snippet": "fee = round(amount * rate, 2)\nreturn fee",
+        "claim": "Fee calculation performs float multiplication instead of high-precision Decimal.",
+        "stance": "supports",
+        "observed_at": "2026-10-14T10:00:04Z",
+        "github_permalink": "https://github.com/bank-org/transfers-demo-app/blob/3778ed8/app/fees/calculator.py#L18-L23",
+        "verification": {
+          "status": "verified",
+          "reason": "Matches code in client repository."
+        }
+      }
+    ],
+    "dropped_cards": [],
+    "verified_claims_count": 2,
+    "dropped_claims_count": 0,
+    "recommended_actions": [
+      "Review git commit and deploy patch to staging",
+      "Verify automated unit tests against seeded regression suite",
+      "Notify customer with approved customer reply draft"
+    ],
+    "workaround": null,
+    "questions_for_client": [],
+    "customer_reply_draft": "We investigated transaction TXN-2041 and confirmed that an internal floating-point rounding issue calculated a fee of INR 10.05 instead of INR 10.04. A 1-paisa credit adjustment has been initiated to your account, and our ledger calculation service is being updated.",
+    "leak_check": {
+      "passed": true,
+      "notes": [
+        "No raw internal file paths or stack traces found in customer draft"
+      ]
+    },
+    "jira_draft": {
+      "title": "Migrate fee calculation in app/fees/calculator.py from float to Decimal",
+      "description": "Binary floating-point arithmetic causes 1-paisa rounding discrepancies on specific amounts (such as 803.40 producing 10.05 rather than 10.04).",
+      "repro_steps": [
+        "Call calculate_transfer_fee(803.40, \"standard\")",
+        "Observe return value is 10.05 instead of Decimal(\"10.04\")"
+      ],
+      "evidence_links": [
+        "https://github.com/bank-org/transfers-demo-app/blob/3778ed8/app/fees/calculator.py#L18-L23"
+      ],
+      "labels": [
+        "bug",
+        "ledger",
+        "fees",
+        "precision"
+      ]
+    },
+    "kb_gap": null,
+    "suggested_diagnostic_queries": [
+      "SELECT * FROM transfers WHERE transfer_id = 'TCK-2041'",
+      "grep -rn 'cutoff' app/transfers/"
+    ],
+    "decision": {
+      "status": "pending",
+      "by": null,
+      "reason": null,
+      "edits_diff": null,
+      "write_back_ref": null
+    },
+    "audit_ref": "sha256-audit-inv-s02",
+    "metrics": {
+      "tool_calls": 8,
+      "tokens": 3840,
+      "latency_ms": 820,
+      "cost_usd": 0.0042
+    }
+  }
+}
