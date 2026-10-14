@@ -1,0 +1,24 @@
+scenario_id: S02
+ticket_class: DATA_ISSUE
+severity: P3
+owner_team: team-core-ledger
+culprit_file: app/fees/calculator.py
+culprit_line_range:
+  start: 15
+  end: 23
+culprit_commit_subject: "feat(fees): implement percentage-based fee tier calculation"
+culprit_commit_sha: "3778ed8"
+contradictions_expected: []
+root_cause_summary: "Binary floating-point arithmetic drift in round(amount * 0.0125, 2) produces 10.05 instead of exact financial Decimal 10.04 on transfer TXN-2041."
+active_agents_expected:
+  - RecordAgent
+  - LogsAgent
+  - CodeAgent
+  - KnowledgeAgent
+skipped_agents_expected:
+  HistoryAgent: "Pruned: Specific record state reconciliation prioritized"
+min_trust_score: 0.75
+policy_action: CONCLUDE
+tags:
+  - DATA_ISSUE
+  - RECORD_LOOKUP

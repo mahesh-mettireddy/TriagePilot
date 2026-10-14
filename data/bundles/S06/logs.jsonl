@@ -1,0 +1,5 @@
+{"log_id": "LOG-S06-001", "ts": "2026-10-14T08:35:10Z", "service": "limits", "level": "INFO", "trace_id": "tr-6000", "message": "Evaluating daily limit for account 778899001122: accumulated_today=0.00"}
+{"log_id": "LOG-S06-002", "ts": "2026-10-14T08:39:55Z", "service": "transfers", "level": "INFO", "trace_id": "tr-6001", "message": "Initiating retail transfer TXN-6001 for amount INR 100000.00"}
+{"log_id": "LOG-S06-003", "ts": "2026-10-14T08:39:55Z", "service": "limits", "level": "ERROR", "trace_id": "tr-6001", "message": "DailyLimitExceededException: Daily limit of ₹100,000.00 exceeded for request of ₹100,000.00 (raised at app/limits/daily_limit.py:27)"}
+{"log_id": "LOG-S06-004", "ts": "2026-10-14T08:39:56Z", "service": "transfers", "level": "WARN", "trace_id": "tr-6001", "message": "Transfer TXN-6001 rejected with status REJECTED_LIMIT"}
+{"log_id": "LOG-S06-005", "ts": "2026-10-14T08:45:00Z", "service": "transfers", "level": "INFO", "trace_id": "tr-6002", "message": "Transfer TXN-6002 for INR 50000.00 completed successfully"}

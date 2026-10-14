@@ -1,0 +1,10 @@
+{
+  "id": "TCK-2041",
+  "scenario_id": "S02",
+  "channel": "portal",
+  "reporter_role": "client",
+  "created_at": "2026-10-14T11:15:00+05:30",
+  "text": "Transfer TXN-2041 fee calculated as ₹10.05 instead of ₹10.04! The transfer principal was ₹803.40 from account 556677889900 to 112233445566. Under standard 1.25% fee tier, 803.40 * 0.0125 is 10.0425, which should round to 10.04. We are being overbilled by 1 paisa on every batch.",
+  "attachments": [],
+  "product_hint": "fees"
+}

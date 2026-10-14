@@ -1,0 +1,12 @@
+{
+  "transfer_id": "TXN-6001",
+  "sender_account": "[ACCT_REDACTED]",
+  "beneficiary_account": "[ACCT_REDACTED]",
+  "amount": 100000.0,
+  "daily_accumulated_before": 0.0,
+  "daily_limit": 100000.0,
+  "status": "REJECTED_LIMIT",
+  "transfer_type": "SAME_DAY",
+  "created_at": "2026-10-14T08:39:55Z",
+  "error_message": "Daily limit of ₹100,000.00 exceeded for request of ₹100,000.00"
+}

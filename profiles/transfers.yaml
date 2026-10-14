@@ -1,0 +1,156 @@
+# Application Profile for Transfers Demo App (TriagePilot Workstream B)
+# Conforms to ARCHITECTURE_AND_SPEC.md and engine/schemas.py
+
+app_name: transfers-service
+version: 1.4.2
+environment: production
+repo_url: https://github.com/bank-org/transfers-demo-app
+default_branch: main
+
+# Modules mapped to owning engineering teams and paths
+modules:
+  Transfers:
+    team: team-payments
+    description: Core payment orchestration, cutoff windows, and idempotency handling
+    paths:
+      - app/transfers/
+      - app/transfers/service.py
+      - app/transfers/cutoff.py
+      - app/transfers/idempotency.py
+    primary_oncall: "@payment-oncall"
+    escalation_policy: urgent-payments-slack
+
+  Fees:
+    team: team-core-ledger
+    description: Fee calculation and tier billing logic
+    paths:
+      - app/fees/
+      - app/fees/calculator.py
+    primary_oncall: "@ledger-oncall"
+    escalation_policy: core-ledger-slack
+
+  Notifications:
+    team: team-comms
+    description: SMS, email, and push dispatch with retry controls
+    paths:
+      - app/notifications/
+      - app/notifications/sms.py
+    primary_oncall: "@comms-oncall"
+    escalation_policy: comms-gateway-slack
+
+  Limits:
+    team: team-payments
+    description: Cumulative daily/monthly volume risk limits
+    paths:
+      - app/limits/
+      - app/limits/daily_limit.py
+    primary_oncall: "@payment-oncall"
+    escalation_policy: urgent-payments-slack
+
+  Settlement:
+    team: team-core-ledger
+    description: NEFT and RTGS batch settlement clearing cycles
+    paths:
+      - app/settlement/
+      - app/settlement/batch.py
+    primary_oncall: "@settlement-oncall"
+    escalation_policy: settlement-operations-slack
+
+  Beneficiary:
+    team: team-payments
+    description: Domestic and international beneficiary registry and IFSC/SWIFT verification
+    paths:
+      - app/beneficiary/
+      - app/beneficiary/manager.py
+    primary_oncall: "@payment-oncall"
+    escalation_policy: urgent-payments-slack
+
+# Canonical log field mappings for LogPort adapter
+log_fields:
+  id_field: log_id
+  timestamp_field: ts
+  service_field: service
+  level_field: level
+  trace_id_field: trace_id
+  message_field: message
+
+# Pre-LLM PII scrubbing patterns (Deterministic non-LLM masking)
+pii_rules:
+  account:
+    pattern: '\b\d{10,16}\b'
+    placeholder: "[ACCT_REDACTED]"
+    description: Domestic and international bank account numbers (10 to 16 digits)
+  phone:
+    pattern: '(?<!\d)(?:\+91[\s\-]?|0)?[6-9]\d{9}(?!\d)'
+    placeholder: "[PHONE_REDACTED]"
+    description: Indian 10-digit mobile numbers with optional country code
+  email:
+    pattern: '[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}'
+    placeholder: "[EMAIL_REDACTED]"
+    description: Standard RFC 5322 email addresses
+  pan:
+    pattern: '\b[A-Z]{5}[0-9]{4}[A-Z]\b'
+    placeholder: "[PAN_REDACTED]"
+    description: Indian Permanent Account Number
+  ifsc:
+    pattern: '\b[A-Z]{4}0[A-Z0-9]{6}\b'
+    placeholder: "[IFSC_REDACTED]"
+    description: Indian Financial System Code
+  gov_id_12digit:
+    pattern: '\b\d{4}[\s\-]?\d{4}[\s\-]?\d{4}\b'
+    placeholder: "[Aadhaar Redacted]"
+    description: 12-digit Indian national identity number
+
+# Resource and execution limits for the investigation swarm
+budgets:
+  max_tool_calls: 12
+  max_active_agents: 5
+  timeout_seconds: 30
+  max_hypotheses: 4
+  trust_thresholds:
+    high_conclude: 0.70
+    medium_caveat: 0.45
+    low_abstain: 0.45
+    min_top_gap: 0.10
+
+# Dynamic router rule preferences
+routing_preferences:
+  HOW_TO_USER_ERROR:
+    active_agents:
+      - KnowledgeAgent
+    skipped_agents:
+      LogsAgent: "Pruned: How-To query requires documentation and user guides only"
+      CodeAgent: "Pruned: User inquiry does not require source code inspection"
+      RecordAgent: "Pruned: No individual transaction record referenced"
+      HistoryAgent: "Pruned: No incident or release correlation needed"
+  KNOWN_ERROR:
+    active_agents:
+      - HistoryAgent
+      - LogsAgent
+    skipped_agents:
+      CodeAgent: "Pruned: Known error pattern matched; code analysis bypassed for fast-path"
+      RecordAgent: "Pruned: Batch or platform level known issue"
+      KnowledgeAgent: "Pruned: Known error repository provides operational workaround"
+  INSUFFICIENT_INFO:
+    active_agents:
+      - HistoryAgent
+      - LogsAgent
+    skipped_agents:
+      CodeAgent: "Pruned: Ticket lack specific transaction or error details"
+      RecordAgent: "Pruned: Missing record identifier in intake"
+      KnowledgeAgent: "Pruned: Defer until discriminating questions answered"
+  DATA_ISSUE:
+    active_agents:
+      - RecordAgent
+      - LogsAgent
+      - CodeAgent
+      - KnowledgeAgent
+    skipped_agents:
+      HistoryAgent: "Pruned: Specific record state reconciliation prioritized"
+  CODE_DEFECT:
+    active_agents:
+      - LogsAgent
+      - CodeAgent
+      - HistoryAgent
+      - KnowledgeAgent
+    skipped_agents: {}

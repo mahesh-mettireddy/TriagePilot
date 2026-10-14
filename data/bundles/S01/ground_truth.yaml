@@ -1,0 +1,25 @@
+scenario_id: S01
+ticket_class: CODE_DEFECT
+severity: P2
+owner_team: team-payments
+culprit_file: app/transfers/cutoff.py
+culprit_line_range:
+  start: 20
+  end: 27
+culprit_commit_subject: "feat(cutoff): implement same-day cutoff window policy (CHG-405)"
+culprit_commit_sha: "142e868"
+contradictions_expected:
+  - kind: TIME_MISMATCH
+    note: "Client claims issue started Monday 9:00 AM IST (2026-10-12T03:30:00Z), but earliest error log LOG-S01-004 occurred Tuesday 16:02:01 IST (2026-10-13T10:32:01Z) (>30h mismatch)."
+root_cause_summary: "Cutoff validation compares datetime.utcnow().hour >= 16 instead of converting to Asia/Kolkata (IST), incorrectly applying UTC hour against 16:00 cutoff window."
+active_agents_expected:
+  - LogsAgent
+  - CodeAgent
+  - HistoryAgent
+  - KnowledgeAgent
+  - RecordAgent
+min_trust_score: 0.70
+policy_action: CONCLUDE
+tags:
+  - CODE_DEFECT
+  - TIME_MISMATCH

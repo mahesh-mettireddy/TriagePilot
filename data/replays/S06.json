@@ -1,0 +1,538 @@
+{
+  "scenario_id": "S06",
+  "events": [
+    {
+      "seq": 1,
+      "ts": "2026-10-14T10:00:00.010Z",
+      "type": "masking_done",
+      "data": {
+        "pii_redacted_count": 2,
+        "injection_detected": false,
+        "injection_note": null
+      }
+    },
+    {
+      "seq": 2,
+      "ts": "2026-10-14T10:00:00.080Z",
+      "type": "plan_created",
+      "data": {
+        "ticket_class": "CODE_DEFECT",
+        "severity": "P2",
+        "extracted_entities": {
+          "scenario": "S06",
+          "ticket_id": "TCK-6006"
+        },
+        "active_agents": [
+          "LogsAgent",
+          "CodeAgent",
+          "HistoryAgent",
+          "KnowledgeAgent",
+          "RecordAgent"
+        ],
+        "skipped_agents": {},
+        "max_tool_calls": 12,
+        "injection_detected": false,
+        "injection_note": null
+      }
+    },
+    {
+      "seq": 3,
+      "ts": "2026-10-14T10:00:00.280Z",
+      "type": "card_added",
+      "data": {
+        "card_id": "card-s06-vis",
+        "specialist": "HistoryAgent",
+        "source_type": "visual",
+        "pointer": {
+          "attachment_id": "screenshot.png"
+        },
+        "snippet": "Error: Daily limit of INR 1,00,000 exceeded for request of INR 1,00,000.00",
+        "claim": "UI dialog explicitly shows ₹1,00,000 request rejected against ₹1,00,000 limit.",
+        "stance": "supports",
+        "observed_at": "2026-10-14T10:00:02Z",
+        "github_permalink": null,
+        "verification": {
+          "status": "verified",
+          "reason": "Corroborated by error log LOG-S06-003."
+        }
+      }
+    },
+    {
+      "seq": 4,
+      "ts": "2026-10-14T10:00:00.310Z",
+      "type": "verifier_result",
+      "data": {
+        "card_id": "card-s06-vis",
+        "status": "verified",
+        "reason": "Corroborated by error log LOG-S06-003."
+      }
+    },
+    {
+      "seq": 5,
+      "ts": "2026-10-14T10:00:00.320Z",
+      "type": "card_added",
+      "data": {
+        "card_id": "card-s06-code",
+        "specialist": "CodeAgent",
+        "source_type": "code",
+        "pointer": {
+          "repo": "transfers-demo-app",
+          "path": "app/limits/daily_limit.py",
+          "line_start": 25,
+          "line_end": 32,
+          "sha": "f68c7f6"
+        },
+        "snippet": "if transfer_amount >= DAILY_TRANSFER_LIMIT:\n    raise DailyLimitExceededException(f\"Daily limit of ₹{DAILY_TRANSFER_LIMIT:,.2f} exceeded for request of ₹{transfer_amount:,.2f}\")",
+        "claim": "Boundary condition uses >= instead of > on transfer_amount check.",
+        "stance": "supports",
+        "observed_at": "2026-10-14T10:00:04Z",
+        "github_permalink": "https://github.com/bank-org/transfers-demo-app/blob/f68c7f6/app/limits/daily_limit.py#L25-L32",
+        "verification": {
+          "status": "verified",
+          "reason": "Verified in clientrepo commit f68c7f6."
+        }
+      }
+    },
+    {
+      "seq": 6,
+      "ts": "2026-10-14T10:00:00.350Z",
+      "type": "verifier_result",
+      "data": {
+        "card_id": "card-s06-code",
+        "status": "verified",
+        "reason": "Verified in clientrepo commit f68c7f6."
+      }
+    },
+    {
+      "seq": 7,
+      "ts": "2026-10-14T10:00:00.360Z",
+      "type": "card_added",
+      "data": {
+        "card_id": "card-s06-doc",
+        "specialist": "KnowledgeAgent",
+        "source_type": "doc",
+        "pointer": {
+          "space": "RISK_CONTROLS",
+          "page_id": "DOC-LIMITS-01",
+          "section": "Daily Cumulative Limits",
+          "last_updated": "2026-07-20T14:00:00Z"
+        },
+        "snippet": "Transfers equal to ₹1,00,000 are permitted and must not be rejected. Transfers exceeding this limit are blocked.",
+        "claim": "Bank policy explicitly permits transfers of exactly ₹1,00,000.",
+        "stance": "contradicts",
+        "observed_at": "2026-10-14T10:00:03Z",
+        "github_permalink": null,
+        "verification": {
+          "status": "verified",
+          "reason": "Verified in docs.json."
+        }
+      }
+    },
+    {
+      "seq": 8,
+      "ts": "2026-10-14T10:00:00.390Z",
+      "type": "verifier_result",
+      "data": {
+        "card_id": "card-s06-doc",
+        "status": "verified",
+        "reason": "Verified in docs.json."
+      }
+    },
+    {
+      "seq": 9,
+      "ts": "2026-10-14T10:00:00.600Z",
+      "type": "contradiction_found",
+      "data": {
+        "kind": "BEHAVIOUR_MISMATCH",
+        "deterministic": false,
+        "card_a": "card-s06-doc",
+        "card_b": "card-s06-code",
+        "note": "Risk Policy DOC-LIMITS-01 permits transfers equal to ₹1,00,000, but app/limits/daily_limit.py blocks transfer amounts >= 100000."
+      }
+    },
+    {
+      "seq": 10,
+      "ts": "2026-10-14T10:00:00.650Z",
+      "type": "trust_update",
+      "data": {
+        "score": 0.9,
+        "band": "HIGH",
+        "policy_action": "CONCLUDE",
+        "components": {
+          "c_ver": 0.85,
+          "c_div": 0.8,
+          "c_spec": 0.9,
+          "c_time": 0.85,
+          "p_contra": 0.15,
+          "p_unver": 0
+        },
+        "rationale": "Vision OCR of screenshot corroborated by error log signature and source code boundary inspection; red-herring commit discounted."
+      }
+    },
+    {
+      "seq": 11,
+      "ts": "2026-10-14T10:00:00.820Z",
+      "type": "report_ready",
+      "data": {
+        "investigation_id": "inv-s06",
+        "ticket_id": "TCK-6006",
+        "scenario_id": "S06",
+        "mode_used": "replay",
+        "ticket_class": "CODE_DEFECT",
+        "severity": "P2",
+        "owner_team": "team-payments",
+        "summary": "Boundary condition error (>= vs >) in app/limits/daily_limit.py blocks valid transfers of exactly ₹1,00,000",
+        "routing_plan": {
+          "ticket_class": "CODE_DEFECT",
+          "severity": "P2",
+          "extracted_entities": {
+            "scenario": "S06",
+            "ticket_id": "TCK-6006"
+          },
+          "active_agents": [
+            "LogsAgent",
+            "CodeAgent",
+            "HistoryAgent",
+            "KnowledgeAgent",
+            "RecordAgent"
+          ],
+          "skipped_agents": {},
+          "max_tool_calls": 12,
+          "injection_detected": false,
+          "injection_note": null
+        },
+        "probable_root_cause": {
+          "hypothesis_id": "hyp-s06-1",
+          "statement": "app/limits/daily_limit.py checks \"if transfer_amount >= DAILY_TRANSFER_LIMIT:\" instead of \">\", blocking exact ₹1,00,000 boundary transfers.",
+          "culprit_files": [
+            "app/limits/daily_limit.py"
+          ],
+          "culprit_commit": "f68c7f6",
+          "supporting_card_ids": [
+            "card-s06-code",
+            "card-s06-log",
+            "card-s06-vis"
+          ],
+          "contradicting_card_ids": [],
+          "score": 0.96
+        },
+        "alternatives": [],
+        "contradictions": [
+          {
+            "kind": "BEHAVIOUR_MISMATCH",
+            "deterministic": false,
+            "card_a": "card-s06-doc",
+            "card_b": "card-s06-code",
+            "note": "Risk Policy DOC-LIMITS-01 permits transfers equal to ₹1,00,000, but app/limits/daily_limit.py blocks transfer amounts >= 100000."
+          }
+        ],
+        "trust": {
+          "score": 0.9,
+          "band": "HIGH",
+          "policy_action": "CONCLUDE",
+          "components": {
+            "c_ver": 0.85,
+            "c_div": 0.8,
+            "c_spec": 0.9,
+            "c_time": 0.85,
+            "p_contra": 0.15,
+            "p_unver": 0
+          },
+          "rationale": "Vision OCR of screenshot corroborated by error log signature and source code boundary inspection; red-herring commit discounted."
+        },
+        "verified_cards": [
+          {
+            "card_id": "card-s06-vis",
+            "specialist": "HistoryAgent",
+            "source_type": "visual",
+            "pointer": {
+              "attachment_id": "screenshot.png"
+            },
+            "snippet": "Error: Daily limit of INR 1,00,000 exceeded for request of INR 1,00,000.00",
+            "claim": "UI dialog explicitly shows ₹1,00,000 request rejected against ₹1,00,000 limit.",
+            "stance": "supports",
+            "observed_at": "2026-10-14T10:00:02Z",
+            "github_permalink": null,
+            "verification": {
+              "status": "verified",
+              "reason": "Corroborated by error log LOG-S06-003."
+            }
+          },
+          {
+            "card_id": "card-s06-code",
+            "specialist": "CodeAgent",
+            "source_type": "code",
+            "pointer": {
+              "repo": "transfers-demo-app",
+              "path": "app/limits/daily_limit.py",
+              "line_start": 25,
+              "line_end": 32,
+              "sha": "f68c7f6"
+            },
+            "snippet": "if transfer_amount >= DAILY_TRANSFER_LIMIT:\n    raise DailyLimitExceededException(f\"Daily limit of ₹{DAILY_TRANSFER_LIMIT:,.2f} exceeded for request of ₹{transfer_amount:,.2f}\")",
+            "claim": "Boundary condition uses >= instead of > on transfer_amount check.",
+            "stance": "supports",
+            "observed_at": "2026-10-14T10:00:04Z",
+            "github_permalink": "https://github.com/bank-org/transfers-demo-app/blob/f68c7f6/app/limits/daily_limit.py#L25-L32",
+            "verification": {
+              "status": "verified",
+              "reason": "Verified in clientrepo commit f68c7f6."
+            }
+          },
+          {
+            "card_id": "card-s06-doc",
+            "specialist": "KnowledgeAgent",
+            "source_type": "doc",
+            "pointer": {
+              "space": "RISK_CONTROLS",
+              "page_id": "DOC-LIMITS-01",
+              "section": "Daily Cumulative Limits",
+              "last_updated": "2026-07-20T14:00:00Z"
+            },
+            "snippet": "Transfers equal to ₹1,00,000 are permitted and must not be rejected. Transfers exceeding this limit are blocked.",
+            "claim": "Bank policy explicitly permits transfers of exactly ₹1,00,000.",
+            "stance": "contradicts",
+            "observed_at": "2026-10-14T10:00:03Z",
+            "github_permalink": null,
+            "verification": {
+              "status": "verified",
+              "reason": "Verified in docs.json."
+            }
+          }
+        ],
+        "dropped_cards": [],
+        "verified_claims_count": 3,
+        "dropped_claims_count": 0,
+        "recommended_actions": [
+          "Review git commit and deploy patch to staging",
+          "Verify automated unit tests against seeded regression suite",
+          "Notify customer with approved customer reply draft"
+        ],
+        "workaround": null,
+        "questions_for_client": [],
+        "customer_reply_draft": "We verified the rejection on your transfer of INR 1,00,000. An internal policy boundary evaluation error caused transfers of exactly INR 1,00,000 to be blocked. Our engineering team has deployed a hotfix, and you can now proceed with your transfer.",
+        "leak_check": {
+          "passed": true,
+          "notes": [
+            "No raw internal file paths or stack traces found in customer draft"
+          ]
+        },
+        "jira_draft": {
+          "title": "Fix boundary check in app/limits/daily_limit.py (Change >= to >)",
+          "description": "Single transfer check uses >= DAILY_TRANSFER_LIMIT which blocks allowed transfers of exactly ₹1,00,000.",
+          "repro_steps": [
+            "Submit transfer of 100,000.00 with 0 accumulated today",
+            "Observe DailyLimitExceededException is erroneously thrown"
+          ],
+          "evidence_links": [
+            "https://github.com/bank-org/transfers-demo-app/blob/f68c7f6/app/limits/daily_limit.py#L25-L32"
+          ],
+          "labels": [
+            "bug",
+            "limits",
+            "boundary-defect"
+          ]
+        },
+        "kb_gap": null,
+        "suggested_diagnostic_queries": [
+          "SELECT * FROM transfers WHERE transfer_id = 'TCK-6006'",
+          "grep -rn 'cutoff' app/transfers/"
+        ],
+        "decision": {
+          "status": "pending",
+          "by": null,
+          "reason": null,
+          "edits_diff": null,
+          "write_back_ref": null
+        },
+        "audit_ref": "sha256-audit-inv-s06",
+        "metrics": {
+          "tool_calls": 10,
+          "tokens": 3840,
+          "latency_ms": 820,
+          "cost_usd": 0.0042
+        }
+      }
+    }
+  ],
+  "report": {
+    "investigation_id": "inv-s06",
+    "ticket_id": "TCK-6006",
+    "scenario_id": "S06",
+    "mode_used": "replay",
+    "ticket_class": "CODE_DEFECT",
+    "severity": "P2",
+    "owner_team": "team-payments",
+    "summary": "Boundary condition error (>= vs >) in app/limits/daily_limit.py blocks valid transfers of exactly ₹1,00,000",
+    "routing_plan": {
+      "ticket_class": "CODE_DEFECT",
+      "severity": "P2",
+      "extracted_entities": {
+        "scenario": "S06",
+        "ticket_id": "TCK-6006"
+      },
+      "active_agents": [
+        "LogsAgent",
+        "CodeAgent",
+        "HistoryAgent",
+        "KnowledgeAgent",
+        "RecordAgent"
+      ],
+      "skipped_agents": {},
+      "max_tool_calls": 12,
+      "injection_detected": false,
+      "injection_note": null
+    },
+    "probable_root_cause": {
+      "hypothesis_id": "hyp-s06-1",
+      "statement": "app/limits/daily_limit.py checks \"if transfer_amount >= DAILY_TRANSFER_LIMIT:\" instead of \">\", blocking exact ₹1,00,000 boundary transfers.",
+      "culprit_files": [
+        "app/limits/daily_limit.py"
+      ],
+      "culprit_commit": "f68c7f6",
+      "supporting_card_ids": [
+        "card-s06-code",
+        "card-s06-log",
+        "card-s06-vis"
+      ],
+      "contradicting_card_ids": [],
+      "score": 0.96
+    },
+    "alternatives": [],
+    "contradictions": [
+      {
+        "kind": "BEHAVIOUR_MISMATCH",
+        "deterministic": false,
+        "card_a": "card-s06-doc",
+        "card_b": "card-s06-code",
+        "note": "Risk Policy DOC-LIMITS-01 permits transfers equal to ₹1,00,000, but app/limits/daily_limit.py blocks transfer amounts >= 100000."
+      }
+    ],
+    "trust": {
+      "score": 0.9,
+      "band": "HIGH",
+      "policy_action": "CONCLUDE",
+      "components": {
+        "c_ver": 0.85,
+        "c_div": 0.8,
+        "c_spec": 0.9,
+        "c_time": 0.85,
+        "p_contra": 0.15,
+        "p_unver": 0
+      },
+      "rationale": "Vision OCR of screenshot corroborated by error log signature and source code boundary inspection; red-herring commit discounted."
+    },
+    "verified_cards": [
+      {
+        "card_id": "card-s06-vis",
+        "specialist": "HistoryAgent",
+        "source_type": "visual",
+        "pointer": {
+          "attachment_id": "screenshot.png"
+        },
+        "snippet": "Error: Daily limit of INR 1,00,000 exceeded for request of INR 1,00,000.00",
+        "claim": "UI dialog explicitly shows ₹1,00,000 request rejected against ₹1,00,000 limit.",
+        "stance": "supports",
+        "observed_at": "2026-10-14T10:00:02Z",
+        "github_permalink": null,
+        "verification": {
+          "status": "verified",
+          "reason": "Corroborated by error log LOG-S06-003."
+        }
+      },
+      {
+        "card_id": "card-s06-code",
+        "specialist": "CodeAgent",
+        "source_type": "code",
+        "pointer": {
+          "repo": "transfers-demo-app",
+          "path": "app/limits/daily_limit.py",
+          "line_start": 25,
+          "line_end": 32,
+          "sha": "f68c7f6"
+        },
+        "snippet": "if transfer_amount >= DAILY_TRANSFER_LIMIT:\n    raise DailyLimitExceededException(f\"Daily limit of ₹{DAILY_TRANSFER_LIMIT:,.2f} exceeded for request of ₹{transfer_amount:,.2f}\")",
+        "claim": "Boundary condition uses >= instead of > on transfer_amount check.",
+        "stance": "supports",
+        "observed_at": "2026-10-14T10:00:04Z",
+        "github_permalink": "https://github.com/bank-org/transfers-demo-app/blob/f68c7f6/app/limits/daily_limit.py#L25-L32",
+        "verification": {
+          "status": "verified",
+          "reason": "Verified in clientrepo commit f68c7f6."
+        }
+      },
+      {
+        "card_id": "card-s06-doc",
+        "specialist": "KnowledgeAgent",
+        "source_type": "doc",
+        "pointer": {
+          "space": "RISK_CONTROLS",
+          "page_id": "DOC-LIMITS-01",
+          "section": "Daily Cumulative Limits",
+          "last_updated": "2026-07-20T14:00:00Z"
+        },
+        "snippet": "Transfers equal to ₹1,00,000 are permitted and must not be rejected. Transfers exceeding this limit are blocked.",
+        "claim": "Bank policy explicitly permits transfers of exactly ₹1,00,000.",
+        "stance": "contradicts",
+        "observed_at": "2026-10-14T10:00:03Z",
+        "github_permalink": null,
+        "verification": {
+          "status": "verified",
+          "reason": "Verified in docs.json."
+        }
+      }
+    ],
+    "dropped_cards": [],
+    "verified_claims_count": 3,
+    "dropped_claims_count": 0,
+    "recommended_actions": [
+      "Review git commit and deploy patch to staging",
+      "Verify automated unit tests against seeded regression suite",
+      "Notify customer with approved customer reply draft"
+    ],
+    "workaround": null,
+    "questions_for_client": [],
+    "customer_reply_draft": "We verified the rejection on your transfer of INR 1,00,000. An internal policy boundary evaluation error caused transfers of exactly INR 1,00,000 to be blocked. Our engineering team has deployed a hotfix, and you can now proceed with your transfer.",
+    "leak_check": {
+      "passed": true,
+      "notes": [
+        "No raw internal file paths or stack traces found in customer draft"
+      ]
+    },
+    "jira_draft": {
+      "title": "Fix boundary check in app/limits/daily_limit.py (Change >= to >)",
+      "description": "Single transfer check uses >= DAILY_TRANSFER_LIMIT which blocks allowed transfers of exactly ₹1,00,000.",
+      "repro_steps": [
+        "Submit transfer of 100,000.00 with 0 accumulated today",
+        "Observe DailyLimitExceededException is erroneously thrown"
+      ],
+      "evidence_links": [
+        "https://github.com/bank-org/transfers-demo-app/blob/f68c7f6/app/limits/daily_limit.py#L25-L32"
+      ],
+      "labels": [
+        "bug",
+        "limits",
+        "boundary-defect"
+      ]
+    },
+    "kb_gap": null,
+    "suggested_diagnostic_queries": [
+      "SELECT * FROM transfers WHERE transfer_id = 'TCK-6006'",
+      "grep -rn 'cutoff' app/transfers/"
+    ],
+    "decision": {
+      "status": "pending",
+      "by": null,
+      "reason": null,
+      "edits_diff": null,
+      "write_back_ref": null
+    },
+    "audit_ref": "sha256-audit-inv-s06",
+    "metrics": {
+      "tool_calls": 10,
+      "tokens": 3840,
+      "latency_ms": 820,
+      "cost_usd": 0.0042
+    }
+  }
+}
