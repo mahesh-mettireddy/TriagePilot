@@ -1,6 +1,6 @@
 # Core API framework
-fastapi==0.115.0
-uvicorn[standard]==0.30.6
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.6
 
 # Data validation (Pydantic v2)
 pydantic>=2.0
