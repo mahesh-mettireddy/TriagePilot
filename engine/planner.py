@@ -113,13 +113,13 @@ _ROUTING_TABLE: dict[TicketClass, tuple[list[str], str]] = {
 # ---------------------------------------------------------------------------
 _KEYWORD_RULES: list[tuple[list[str], TicketClass]] = [
     (["hack", "breach", "attack", "exploit", "vulnerability", "sql injection", "xss"], TicketClass.SECURITY_SENSITIVE),
-    (["known error", "ke-", "holiday", "settlement delay", "bank holiday"], TicketClass.KNOWN_ERROR),
-    (["how do i", "how to", "guide", "add beneficiary", "step by step", "instructions"], TicketClass.HOW_TO_USER_ERROR),
-    (["not working", "urgently", "no details", "please help"], TicketClass.INSUFFICIENT_INFO),
-    (["fee", "amount wrong", "incorrect amount", "wrong fee", "off by", "rounding"], TicketClass.DATA_ISSUE),
-    (["slow", "timeout", "latency", "performance", "capacity", "memory", "cpu"], TicketClass.PERFORMANCE_CAPACITY),
-    (["access denied", "permission", "unauthorized", "403", "forbidden"], TicketClass.ACCESS_PERMISSION),
-    (["third party", "external service", "api down", "vendor", "gateway"], TicketClass.THIRD_PARTY),
+    (["known error", "ke-", "holiday", "settlement delay", "settlement is delayed", "batch settlement", "bank holiday"], TicketClass.KNOWN_ERROR),
+    (["how do i", "how to", "how can i", "guide", "add beneficiary", "step by step", "user manual", "documentation on how"], TicketClass.HOW_TO_USER_ERROR),
+    (["transfers not working", "not working urgently", "no details", "halted. please help"], TicketClass.INSUFFICIENT_INFO),
+    (["fee", "amount wrong", "incorrect amount", "wrong fee", "off by", "rounding", "decimal"], TicketClass.DATA_ISSUE),
+    (["slow", "timeout", "latency", "performance", "capacity", "out of memory", "high cpu"], TicketClass.PERFORMANCE_CAPACITY),
+    (["access denied", "permission", "unauthorized", "403 forbidden"], TicketClass.ACCESS_PERMISSION),
+    (["third party", "external service", "vendor api", "vendor outage", "external gateway"], TicketClass.THIRD_PARTY),
     (["config", "environment", "env var", "setting", "configuration"], TicketClass.CONFIG_ENV),
     # CODE_DEFECT is the default fallback
 ]

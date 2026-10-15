@@ -76,6 +76,7 @@ def compute_scenario_metrics(
         "trust_band": report.trust.band.value,
         "policy_action": report.trust.policy_action.value,
         "latency_ms": report.metrics.get("latency_ms", 0),
+        "verified_cards_count": len(report.verified_cards),
     }
 
 
