@@ -1,0 +1,30 @@
+# Git & IDE
+.git
+.gitignore
+.gemini
+.idea
+.vscode
+
+# Node & Frontend
+ui/node_modules
+ui/dist
+ui/.vite
+
+# Python & Caching
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+
+# Testing & Coverage
+.pytest_cache
+.coverage
+htmlcov/
+
+# Logs & Brain
+*.log
+brain/
