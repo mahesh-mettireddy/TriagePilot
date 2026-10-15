@@ -36,9 +36,13 @@ from engine.adapters.fixture_adapter import get_adapters
 from engine.agents.hypothesis_agent import generate_hypotheses
 from engine.agents.report_agent import generate_report
 from engine.agents.specialists import run_active_agents
-from engine.masking import mask_ticket
+from engine.masking import detect_prompt_injection, mask_ticket
 from engine.planner import Planner, get_planner
-from engine.policy import evaluate_policy_gate
+from engine.policy import (
+    bind_report_revision,
+    evaluate_policy_gate,
+    validate_report_approval,
+)
 from engine.reconcile import reconcile
 from engine.schemas import (
     AgentRoutingPlan,
@@ -56,6 +60,9 @@ from engine.schemas import (
 )
 from engine.trust import compute_trust
 from engine.verifier import verify_cards
+from engine.ai_runtime import get_ai_runtime
+from engine.persistence import get_investigation_store
+from engine.masking import redact_evidence_for_output
 
 logger = logging.getLogger(__name__)
 
@@ -77,27 +84,54 @@ class InvestigationManager:
         self._investigations: dict[str, ReportOutput] = {}
         self._event_queues: dict[str, list[asyncio.Queue[Optional[SSEEvent]]]] = {}
         self._event_histories: dict[str, list[SSEEvent]] = {}
+        self._closed_investigations: set[str] = set()
+        self._active_tasks: dict[str, asyncio.Task[None]] = {}
+        self._failed_investigations: dict[str, str] = {}
         self._adapters = get_adapters()
         self._planner = get_planner()
+        self._store = get_investigation_store()
 
     def get_report(self, investigation_id: str) -> Optional[ReportOutput]:
-        return self._investigations.get(investigation_id)
+        return self._investigations.get(investigation_id) or self._store.get_report(investigation_id)
+
+    def get_error(self, investigation_id: str) -> Optional[str]:
+        if investigation_id in self._failed_investigations:
+            return self._failed_investigations[investigation_id]
+        for evt in self.get_events(investigation_id):
+            if evt.type == "error":
+                return str(evt.data.get("message") or "Investigation failed")
+        return None
+
+    async def wait_for_report(self, investigation_id: str, timeout: float = 2.0) -> Optional[ReportOutput]:
+        report = self.get_report(investigation_id)
+        if report is not None:
+            return report
+        task = self._active_tasks.get(investigation_id)
+        if task is not None and not task.done():
+            await asyncio.wait({task}, timeout=timeout)
+            return self.get_report(investigation_id)
+        return None
 
     def get_events(self, investigation_id: str) -> list[SSEEvent]:
-        return self._event_histories.get(investigation_id, [])
+        return self._event_histories.get(investigation_id) or self._store.get_events(investigation_id)
 
-    def register_listener(self, investigation_id: str) -> asyncio.Queue[Optional[SSEEvent]]:
+    def register_listener(
+        self, investigation_id: str, after_seq: int = 0
+    ) -> asyncio.Queue[Optional[SSEEvent]]:
         q: asyncio.Queue[Optional[SSEEvent]] = asyncio.Queue()
         if investigation_id not in self._event_queues:
             self._event_queues[investigation_id] = []
         self._event_queues[investigation_id].append(q)
 
-        # Replay already-emitted historical events to this new listener
-        for evt in self._event_histories.get(investigation_id, []):
-            q.put_nowait(evt)
+        # Replay persisted historical events so reconnects work across instances.
+        history = self.get_events(investigation_id)
+        self._event_histories.setdefault(investigation_id, history)
+        for evt in history:
+            if evt.seq > after_seq:
+                q.put_nowait(evt)
 
         # If investigation is already completed, signal end of stream
-        if investigation_id in self._investigations:
+        if investigation_id in self._closed_investigations or self.get_report(investigation_id) is not None:
             q.put_nowait(None)
 
         return q
@@ -119,6 +153,7 @@ class InvestigationManager:
         if investigation_id not in self._event_histories:
             self._event_histories[investigation_id] = []
         self._event_histories[investigation_id].append(event)
+        self._store.save_event(investigation_id, event)
 
         for q in self._event_queues.get(investigation_id, []):
             await q.put(event)
@@ -126,6 +161,7 @@ class InvestigationManager:
         return event
 
     async def _close_stream(self, investigation_id: str) -> None:
+        self._closed_investigations.add(investigation_id)
         for q in self._event_queues.get(investigation_id, []):
             await q.put(None)
 
@@ -137,11 +173,16 @@ class InvestigationManager:
         investigation_id = f"INV-{uuid.uuid4().hex[:8]}"
         self._event_histories[investigation_id] = []
         self._event_queues[investigation_id] = []
+        self._closed_investigations.discard(investigation_id)
+        self._failed_investigations.pop(investigation_id, None)
 
         if req.mode == "replay":
             task = asyncio.create_task(self._run_replay(investigation_id, req))
         else:
             task = asyncio.create_task(self._run_live(investigation_id, req))
+
+        self._active_tasks[investigation_id] = task
+        task.add_done_callback(lambda _: self._active_tasks.pop(investigation_id, None))
 
         if wait:
             await task
@@ -182,7 +223,18 @@ class InvestigationManager:
                     report = ReportOutput(**report_data)
                     report.investigation_id = investigation_id
                     report.mode_used = "replay"
+                    report.execution.mode = "replay"
+                    report.execution.provider = "replay"
+                    report.execution.configured = False
+                    report.write_back_allowed = (
+                        report.trust.policy_action
+                        in {PolicyAction.CONCLUDE, PolicyAction.CONCLUDE_WITH_CAVEAT}
+                        and report.leak_check.passed
+                    )
+                    report.needs_human_edit = not report.leak_check.passed
+                    report = bind_report_revision(report)
                     self._investigations[investigation_id] = report
+                    self._store.save_report(report)
                     await self._close_stream(investigation_id)
                     return
             except Exception as exc:
@@ -206,6 +258,7 @@ class InvestigationManager:
         try:
             await self._run_live_pipeline(investigation_id, req, seq)
         except Exception as exc:
+            self._failed_investigations[investigation_id] = str(exc)
             logger.error("Error running investigation %s: %s", investigation_id, exc, exc_info=True)
             await self._emit_event(
                 investigation_id,
@@ -222,16 +275,19 @@ class InvestigationManager:
         seq: list[int],
     ) -> None:
         start_time = datetime.now(timezone.utc)
+        runtime = get_ai_runtime()
+        runtime_call_start = len(runtime.calls)
         scenario_id = req.scenario_id or "S01"
         raw_text = req.text or ""
+        bundle_ticket: dict[str, Any] = {}
 
         # Default ticket text lookup from bundle if not provided directly
         if not raw_text:
             ticket_path = _REPO_ROOT / "data" / "bundles" / scenario_id / "ticket.json"
             if ticket_path.exists():
                 try:
-                    ticket_json = json.loads(ticket_path.read_text(encoding="utf-8"))
-                    raw_text = ticket_json.get("text", f"Issue in {scenario_id}")
+                    bundle_ticket = json.loads(ticket_path.read_text(encoding="utf-8"))
+                    raw_text = bundle_ticket.get("text", f"Issue in {scenario_id}")
                 except Exception:
                     raw_text = f"Transfer issue in {scenario_id}"
             else:
@@ -259,7 +315,7 @@ class InvestigationManager:
         ticket_dto = TicketDTO(
             id=f"TKT-{scenario_id}",
             scenario_id=scenario_id,
-            created_at=_utc_now(),
+            created_at=bundle_ticket.get("created_at", _utc_now()),
             text=raw_text,
             masked_text=masking_res.masked_text,
             pii_redacted_count=masking_res.pii_redacted_count,
@@ -305,8 +361,23 @@ class InvestigationManager:
                 trust=trust,
                 investigation_id=investigation_id,
             )
+            report.execution.provider = runtime.status.provider
+            report.execution.mode = runtime.status.mode
+            report.execution.configured = runtime.status.configured
+            report.execution.models = list(runtime.status.models)
+            report.execution.calls = list(runtime.calls[runtime_call_start:])
+            report.execution.fallback_reason = runtime.status.fallback_reason
+            report.verified_cards = redact_evidence_for_output(report.verified_cards)
+            report.dropped_cards = redact_evidence_for_output(report.dropped_cards)
+            report = bind_report_revision(report)
             self._investigations[investigation_id] = report
-            await self._emit_event(investigation_id, seq, "abstain", {"policy_action": "ESCALATE_SECURITY"})
+            self._store.save_report(report)
+            await self._emit_event(
+                investigation_id,
+                seq,
+                "policy_halted",
+                {"policy_action": "ESCALATE_SECURITY", "reason": trust.rationale},
+            )
             await self._emit_event(investigation_id, seq, "report_ready", report.model_dump(mode="json"))
             await self._close_stream(investigation_id)
             return
@@ -331,6 +402,27 @@ class InvestigationManager:
         )
         await swarm_queue.put(None)  # signal forwarder to exit
         await forwarder_task
+
+        source_injections = [
+            card for card in cards
+            if detect_prompt_injection(f"{card.snippet} {card.claim}")[0]
+        ]
+        if source_injections:
+            plan.injection_detected = True
+            plan.injection_note = (
+                f"{len(source_injections)} external evidence card(s) quarantined as prompt injection"
+            )
+
+        if plan.tool_budget_rejections:
+            audit.append(
+                investigation_id,
+                "tool_budget_rejected",
+                {
+                    "rejections": plan.tool_budget_rejections,
+                    "limit": plan.max_tool_calls,
+                    "used": plan.tool_calls_used,
+                },
+            )
 
         # Step 4: Deterministic Verifier
         verified_cards, dropped_cards = verify_cards(cards, self._adapters, scenario_id)
@@ -435,16 +527,48 @@ class InvestigationManager:
             trust=trust,
             investigation_id=investigation_id,
         )
+        runtime = get_ai_runtime()
+        status = runtime.status
+        inv_calls = list(runtime.calls[runtime_call_start:])
+        fallback_reasons = [
+            str(c.get("fallback_reason") or c.get("error"))
+            for c in inv_calls
+            if c.get("outcome") == "fallback" and (c.get("fallback_reason") or c.get("error"))
+        ]
+        any_success = any(c.get("outcome") == "success" for c in inv_calls)
+        report.execution.provider = status.provider if (any_success or not inv_calls) else "none"
+        report.execution.mode = status.mode if (any_success or not inv_calls) else "fallback"
+        report.execution.configured = status.configured
+        report.execution.models = list(status.models)
+        report.execution.calls = inv_calls
+        report.execution.fallback_reason = status.fallback_reason or (
+            "; ".join(fallback_reasons) if fallback_reasons else None
+        )
+        report.metrics["model_calls"] = len(inv_calls)
 
         elapsed_ms = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
         report.metrics = {
-            "tool_calls": len(cards),
+            "tool_calls": plan.tool_calls_used,
+            "tool_budget_limit": plan.max_tool_calls,
+            "tool_budget_rejections": plan.tool_budget_rejections,
+            "model_calls": len(runtime.calls[runtime_call_start:]),
             "tokens": 0,
             "latency_ms": elapsed_ms,
             "cost_usd": 0.0,
         }
 
+        # Keep deterministic verification internal, but never persist raw
+        # evidence snippets to a client-visible report.
+        report.verified_cards = redact_evidence_for_output(report.verified_cards)
+        report.dropped_cards = redact_evidence_for_output(report.dropped_cards)
+        report.write_back_allowed = (
+            report.write_back_allowed
+            and trust.policy_action
+            not in {PolicyAction.ABSTAIN, PolicyAction.ESCALATE_SECURITY}
+        )
+        report = bind_report_revision(report)
         self._investigations[investigation_id] = report
+        self._store.save_report(report)
 
         audit.append(
             investigation_id,
@@ -461,12 +585,24 @@ class InvestigationManager:
             "report_ready",
             report.model_dump(mode="json"),
         )
-        await self._emit_event(
-            investigation_id,
-            seq,
-            "awaiting_approval",
-            {"investigation_id": investigation_id},
-        )
+        if trust.policy_action in {PolicyAction.ABSTAIN, PolicyAction.ESCALATE_SECURITY}:
+            await self._emit_event(
+                investigation_id,
+                seq,
+                "policy_halted",
+                {
+                    "policy_action": trust.policy_action.value,
+                    "reason": trust.rationale,
+                    "write_back_allowed": False,
+                },
+            )
+        else:
+            await self._emit_event(
+                investigation_id,
+                seq,
+                "awaiting_approval",
+                {"investigation_id": investigation_id},
+            )
 
         await self._close_stream(investigation_id)
 
@@ -475,12 +611,34 @@ class InvestigationManager:
         investigation_id: str,
         decision: HumanDecision,
     ) -> ReportOutput:
-        report = self._investigations.get(investigation_id)
+        report = self.get_report(investigation_id)
         if not report:
             raise KeyError(f"Investigation {investigation_id} not found.")
+        history = self.get_events(investigation_id)
+        self._event_histories.setdefault(investigation_id, history)
+        seq = [len(history)]
 
+        if report.decision.status == "approved":
+            if report.decision.decision_id == decision.decision_id and decision.decision_id:
+                return report
+            raise ValueError("An approval has already been applied to this report.")
+
+        if decision.status == "approved":
+            allowed, reason = validate_report_approval(report, decision)
+            if not allowed:
+                await self._emit_event(
+                    investigation_id,
+                    seq,
+                    "writeback_blocked",
+                    {"reason": reason or "Approval rejected by policy"},
+                )
+                raise ValueError(reason or "Approval rejected by policy")
+
+        # Client-supplied write_back_ref is never trusted.  The server creates
+        # it only after the WritePort mutation succeeds.
+        decision = decision.model_copy(update={"write_back_ref": None})
         report.decision = decision
-        seq = [len(self._event_histories.get(investigation_id, []))]
+        self._store.save_report(report)
 
         await self._emit_event(
             investigation_id,
@@ -508,6 +666,9 @@ class InvestigationManager:
                 ref_info["comment"] = comment_res
 
             decision.write_back_ref = json.dumps(ref_info)
+            report.decision = decision
+            self._store.save_report(report)
+            audit.append(investigation_id, "write_back_done", {"references": ref_info})
             await self._emit_event(
                 investigation_id,
                 seq,

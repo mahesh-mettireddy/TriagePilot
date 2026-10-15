@@ -9,7 +9,6 @@ and prints the architectural ablation comparison table.
 
 import asyncio
 import os
-import subprocess
 import sys
 from pathlib import Path
 
@@ -29,7 +28,7 @@ from eval.runner import run_all_evals
 async def main():
     print("=" * 80)
     print("  TriagePilot -- Autonomous Initial Analyst Benchmark Suite")
-    print("  Evaluating 8 Golden Scenarios Across 15 Git Commits")
+    print("  Evaluating 8 Golden Scenarios (fresh run with provenance metadata)")
     print("=" * 80)
     print()
 
@@ -38,6 +37,10 @@ async def main():
 
     scenario_results = eval_results.get("scenario_results", [])
     summary = eval_results.get("summary", {})
+    print(f"  Run ID: {eval_results.get('run_id', 'unknown')}")
+    print(f"  Execution mode: {eval_results.get('execution_mode', 'unknown')}")
+    print(f"  Commit: {eval_results.get('commit', 'unknown')}")
+    print(f"  Ground truth: {eval_results.get('ground_truth_version', 'unknown')}")
 
     print()
     print("-" * 80)
@@ -53,7 +56,11 @@ async def main():
         d_count = res.get("hallucinations_dropped_count", 0)
         t_score = f"{res.get('trust_score', 0.0):.2f}"
         
-        passed = res.get("class_match", False) and not res.get("error")
+        passed = (
+            res.get("class_match", False)
+            and res.get("root_cause_hit", False)
+            and not res.get("error")
+        )
         status = "[PASS]" if passed else "[FAIL]"
         if not passed:
             all_passed = False
@@ -101,14 +108,8 @@ async def main():
     print("-" * 80)
     print()
 
-    # Reset test-generated audit chain entries to preserve baseline git state
-    try:
-        subprocess.run(["git", "checkout", "audit_chain.json"], cwd=str(_REPO_ROOT), check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    except Exception:
-        pass
-
     if all_passed:
-        print("[SUCCESS] All evaluation gates passed with 100% citation grounding and 0 hallucinations!")
+        print("[SUCCESS] Evaluation completed; inspect the run metadata before citing results.")
         return 0
     else:
         print("[WARNING] One or more scenarios did not meet criteria.")

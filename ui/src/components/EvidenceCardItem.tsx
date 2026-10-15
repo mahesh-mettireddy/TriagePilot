@@ -18,6 +18,15 @@ export const EvidenceCardItem: React.FC<EvidenceCardItemProps> = ({ card, onInsp
   };
 
   const stance = stanceBadges[card.stance] || { label: card.stance, class: 'bg-slate-800 text-slate-300' };
+  const proofLabel = card.source_type === 'code' && card.pointer?.path
+    ? `${card.pointer.path}:${card.pointer.line_start || '?'}@${card.pointer.sha || '?'}`
+    : card.source_type === 'log' && card.pointer?.log_id
+      ? `${card.pointer.log_id}@${card.pointer.ts || '?'}`
+      : card.source_type === 'doc' && card.pointer?.page_id
+        ? `${card.pointer.page_id}/${card.pointer.section || '?'}`
+        : card.source_type === 'record' && card.pointer?.id
+          ? `${card.pointer.id}/${card.pointer.field || '?'}`
+          : card.card_id;
 
   return (
     <div
@@ -90,12 +99,22 @@ export const EvidenceCardItem: React.FC<EvidenceCardItemProps> = ({ card, onInsp
           {card.pointer?.file || card.pointer?.commit || card.pointer?.runbook || card.source_type}
         </div>
 
-        <button
-          onClick={() => onInspect(card)}
-          className="flex items-center gap-1 text-[11px] font-medium text-teal-400 hover:text-teal-300 transition-colors bg-teal-950/50 hover:bg-teal-900/50 px-2 py-1 rounded border border-teal-500/30 shrink-0"
-        >
-          <Search className="w-3 h-3" /> Inspect Proof
-        </button>
+        {isVerified ? (
+          <button
+            onClick={() => onInspect(card)}
+            title={`Verified proof: ${proofLabel}`}
+            className="flex items-center gap-1 text-[10px] font-mono font-semibold text-emerald-300 hover:text-emerald-200 transition-colors bg-emerald-950/50 hover:bg-emerald-900/50 px-2 py-1 rounded border border-emerald-500/30 shrink-0 max-w-[70%] truncate"
+          >
+            <CheckCircle2 className="w-3 h-3 shrink-0" /> VERIFIED: {proofLabel}
+          </button>
+        ) : (
+          <button
+            onClick={() => onInspect(card)}
+            className="flex items-center gap-1 text-[11px] font-medium text-teal-400 hover:text-teal-300 transition-colors bg-teal-950/50 hover:bg-teal-900/50 px-2 py-1 rounded border border-teal-500/30 shrink-0"
+          >
+            <Search className="w-3 h-3" /> Inspect Proof
+          </button>
+        )}
       </div>
     </div>
   );

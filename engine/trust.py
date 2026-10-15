@@ -28,6 +28,7 @@ Also ABSTAIN if top-2 hypothesis gap < 0.10.
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from engine.schemas import (
@@ -130,16 +131,19 @@ def _c_time(verified_cards: list[EvidenceCard]) -> float:
     if len(timestamps) < 2:
         return 0.3  # Some evidence but no temporal confirmation
 
-    # Check if timestamps are within 24 hours of each other
-    try:
-        sorted_ts = sorted(timestamps)
-        # Simple heuristic: first and last timestamp within 7 days = good
-        if sorted_ts[0][:10] and sorted_ts[-1][:10]:
-            return 0.8  # timestamps present and parseable
-    except (IndexError, TypeError):
-        pass
-
-    return 0.5  # timestamps exist but can't confirm alignment
+    parsed: list[datetime] = []
+    for value in timestamps:
+        try:
+            dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            parsed.append(dt.astimezone(timezone.utc))
+        except (TypeError, ValueError):
+            return 0.0
+    if len(parsed) < 2:
+        return 0.3
+    span = max(parsed) - min(parsed)
+    return 0.8 if span.total_seconds() <= 24 * 60 * 60 else 0.2
 
 
 def _p_contra(contradictions: list[Contradiction]) -> float:
@@ -187,31 +191,33 @@ def compute_trust(
     total = len(verified_cards) + len(dropped_cards)
 
     # Compute components
-    components = TrustComponents(
-        c_ver=round(_c_ver(len(verified_cards), total), 4),
-        c_div=round(_c_div(verified_cards), 4),
-        c_spec=round(_c_spec(verified_cards), 4),
-        c_time=round(_c_time(verified_cards), 4),
-        p_contra=round(_p_contra(contradictions), 4),
-        p_unver=round(_p_unver(len(dropped_cards), total), 4),
-    )
+    raw_components = {
+        "c_ver": _c_ver(len(verified_cards), total),
+        "c_div": _c_div(verified_cards),
+        "c_spec": _c_spec(verified_cards),
+        "c_time": _c_time(verified_cards),
+        "p_contra": _p_contra(contradictions),
+        "p_unver": _p_unver(len(dropped_cards), total),
+    }
+    components = TrustComponents(**{key: round(value, 4) for key, value in raw_components.items()})
 
     # Apply formula
     raw_score = (
-        W_VER * components.c_ver
-        + W_DIV * components.c_div
-        + W_SPEC * components.c_spec
-        + W_TIME * components.c_time
-        - P_CONTRA * components.p_contra
-        - P_UNVER * components.p_unver
+        W_VER * raw_components["c_ver"]
+        + W_DIV * raw_components["c_div"]
+        + W_SPEC * raw_components["c_spec"]
+        + W_TIME * raw_components["c_time"]
+        - P_CONTRA * raw_components["p_contra"]
+        - P_UNVER * raw_components["p_unver"]
     )
-    score = round(_clamp(raw_score), 2)
+    bounded_score = _clamp(raw_score)
+    score = round(bounded_score, 2)
 
     # Determine band
-    if score >= 0.70:
+    if bounded_score >= 0.70:
         band = DecisionBand.HIGH
         policy = PolicyAction.CONCLUDE
-    elif score >= 0.45:
+    elif bounded_score >= 0.45:
         band = DecisionBand.MEDIUM
         policy = PolicyAction.CONCLUDE_WITH_CAVEAT
     else:

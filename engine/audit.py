@@ -201,10 +201,9 @@ class AuditLog:
         Thread-safe. Computes ``hash = SHA256(prev_hash || canonical_json(payload))``.
         """
         with self._seq_lock:
-            seq = self._seq
-            ts = _utc_now()
-
             existing = self._store.all()
+            seq = (existing[-1].seq + 1) if existing else 1
+            ts = _utc_now()
             prev_hash = existing[-1].hash if existing else _GENESIS_HASH
 
             payload_for_hash = {
@@ -226,7 +225,7 @@ class AuditLog:
                 hash=entry_hash,
             )
             self._store.append(entry)
-            self._seq += 1
+            self._seq = seq + 1
 
         return entry
 
@@ -290,6 +289,10 @@ class AuditLog:
             return [e for e in all_entries if e.investigation_id == investigation_id]
         return all_entries
 
+    def backend_status(self) -> str:
+        """Return the configured persistence backend name."""
+        return type(self._store).__name__
+
     def reset(self) -> None:
         """
         Clear all entries.  **For testing only — never call in production.**
@@ -323,3 +326,8 @@ def verify_chain() -> dict[str, Any]:
 def get_chain(investigation_id: Optional[str] = None) -> list[AuditChainEntry]:
     """Return entries from the global :data:`audit_log`."""
     return audit_log.get_chain(investigation_id)
+
+
+def backend_status() -> str:
+    """Return the global audit persistence backend name."""
+    return audit_log.backend_status()

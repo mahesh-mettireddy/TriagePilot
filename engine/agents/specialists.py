@@ -45,6 +45,8 @@ from engine.schemas import (
     VerificationResult,
     VerificationStatus,
 )
+from engine.adk_orchestration import build_adk_specialist_swarm
+from engine.tool_budget import ToolBudget, budgeted_adapters
 
 logger = logging.getLogger(__name__)
 
@@ -228,10 +230,17 @@ class KnowledgeAgent:
             )
             for doc in docs:
                 # Fetch the first section for the snippet
+                section_name = ""
+                if hasattr(self._port, "_pages"):
+                    page = next(
+                        (p for p in self._port._pages if p.get("page_id") == doc.get("page_id")),
+                        None,
+                    )
+                    section_name = next(iter((page or {}).get("sections", {})), "")
                 section_data = await asyncio.get_event_loop().run_in_executor(
                     None,
                     lambda d=doc: self._port.get_doc_section(
-                        d["page_id"], next(iter({}), "overview")
+                        d["page_id"], section_name
                     ),
                 )
                 snippet = (
@@ -246,7 +255,7 @@ class KnowledgeAgent:
                     pointer={
                         "space": doc.get("space", "KB"),
                         "page_id": doc["page_id"],
-                        "section": "overview",
+                        "section": section_data.get("section", section_name) if section_data else section_name,
                         "last_updated": doc.get("last_updated", ""),
                     },
                     snippet=snippet,
@@ -641,6 +650,25 @@ async def run_active_agents(
     """
     # Shared sequence counter (mutable list for closure mutation)
     seq: list[int] = [0]
+    budget = ToolBudget(plan.max_tool_calls)
+    guarded_adapters = budgeted_adapters(adapters, budget)
+
+    # Register reusable ADK contracts only.  The installed path is explicitly
+    # registration-only; deterministic ports remain the source of facts and
+    # the shared budget is passed into ADK registration as a hard invariant.
+    adk_swarm = build_adk_specialist_swarm(
+        adapters,
+        list(plan.active_agents),
+        budget=budget,
+    )
+    await _emit(event_queue, _make_event(seq, "adk_orchestration", {
+        "native_adk_registered": adk_swarm is not None,
+        "native_adk_executed": False,
+        "execution": "registration_only",
+        "active_agents": list(plan.active_agents),
+        "model": "gemini-2.5-flash",
+        "tool_budget": budget.limit,
+    }))
 
     # Emit agent_skipped for pruned agents
     for agent_name, reason in plan.skipped_agents.items():
@@ -651,11 +679,11 @@ async def run_active_agents(
 
     # Build coroutines for each ACTIVE agent
     _agent_map = {
-        "HistoryAgent":   lambda: HistoryAgent(adapters["history"]).run(ticket, plan, seq, event_queue),
-        "KnowledgeAgent": lambda: KnowledgeAgent(adapters["knowledge"]).run(ticket, plan, seq, event_queue),
-        "LogsAgent":      lambda: LogsAgent(adapters["logs"]).run(ticket, plan, seq, event_queue),
-        "CodeAgent":      lambda: CodeAgent(adapters["code"]).run(ticket, plan, seq, event_queue),
-        "RecordAgent":    lambda: RecordAgent(adapters["record"]).run(ticket, plan, seq, event_queue),
+        "HistoryAgent":   lambda: HistoryAgent(guarded_adapters["history"]).run(ticket, plan, seq, event_queue),
+        "KnowledgeAgent": lambda: KnowledgeAgent(guarded_adapters["knowledge"]).run(ticket, plan, seq, event_queue),
+        "LogsAgent":      lambda: LogsAgent(guarded_adapters["logs"]).run(ticket, plan, seq, event_queue),
+        "CodeAgent":      lambda: CodeAgent(guarded_adapters["code"]).run(ticket, plan, seq, event_queue),
+        "RecordAgent":    lambda: RecordAgent(guarded_adapters["record"]).run(ticket, plan, seq, event_queue),
     }
 
     coros = [
@@ -666,6 +694,7 @@ async def run_active_agents(
 
     if not coros:
         logger.info("No active agents — SECURITY_SENSITIVE or all pruned.")
+        plan.tool_calls_used = 0
         return []
 
     # Run all active agents in parallel
@@ -676,6 +705,14 @@ async def run_active_agents(
     for card_list in results:
         if isinstance(card_list, list):
             all_cards.extend(card_list)
+
+    plan.tool_calls_used = budget.used
+    plan.tool_budget_rejections = len(budget.rejections)
+    for rejection in budget.rejections:
+        await _emit(event_queue, _make_event(seq, "tool_budget_rejected", {
+            **rejection,
+            "message": "Tool invocation rejected before adapter execution; hard budget preserved.",
+        }))
 
     logger.info(
         "Specialist swarm complete: %d active agents, %d evidence cards",

@@ -300,15 +300,10 @@ class FixtureKnowledgeAdapter(KnowledgePort):
                         "content": content,
                         "last_updated": page["last_updated"],
                     }
-                # Return first section if requested section not found
-                if sections:
-                    first_key = next(iter(sections))
-                    return {
-                        "page_id": page_id,
-                        "section": first_key,
-                        "content": sections[first_key],
-                        "last_updated": page["last_updated"],
-                    }
+                # A pointer to an unknown section is not proof of the first
+                # section.  Returning a substitute silently verifies a
+                # hallucinated citation, so fail closed here.
+                return None
         return None
 
 
@@ -441,22 +436,15 @@ class FixtureCodeAdapter(CodePort):
             return None
 
     def _read_file_at_sha(self, path: str, sha: Optional[str]) -> str:
-        """Read file content at a given SHA (or HEAD)."""
-        if self._repo is None:
-            return ""
+        """Read file content at an explicit commit SHA."""
+        if self._repo is None or not sha:
+            raise FileNotFoundError("Pinned git repository or commit SHA is unavailable")
         try:
-            if sha:
-                commit = self._repo.commit(sha)
-                blob = commit.tree / path
-            else:
-                blob = self._repo.head.commit.tree / path
+            commit = self._repo.commit(sha)
+            blob = commit.tree / path
             return blob.data_stream.read().decode("utf-8", errors="replace")
-        except Exception:
-            # Try reading directly from disk as fallback
-            full_path = self._repo_path / path
-            if full_path.exists():
-                return full_path.read_text(encoding="utf-8", errors="replace")
-            return ""
+        except Exception as exc:
+            raise FileNotFoundError(f"Cannot read {path} at commit {sha}") from exc
 
     def search_code(self, query: str, limit: int = 10) -> list[dict[str, Any]]:
         """Grep-style search across all tracked files."""
@@ -506,13 +494,20 @@ class FixtureCodeAdapter(CodePort):
         line_end: int,
         sha: Optional[str] = None,
     ) -> dict[str, Any]:
+        if not sha or len(sha) != 40:
+            raise ValueError("read_lines requires a full 40-character commit SHA")
+        if line_start < 1 or line_end < line_start:
+            raise ValueError("line range must satisfy 1 <= line_start <= line_end")
         content = self._read_file_at_sha(path, sha)
         all_lines = content.splitlines()
-        # Clamp to valid range
-        start = max(0, line_start - 1)
-        end = min(len(all_lines), line_end)
+        if line_end > len(all_lines):
+            raise ValueError(
+                f"line range {line_start}-{line_end} exceeds file length {len(all_lines)}"
+            )
+        start = line_start - 1
+        end = line_end
         excerpt = "\n".join(all_lines[start:end])
-        resolved_sha = sha or self._head_sha()
+        resolved_sha = sha
 
         # Build GitHub permalink using GITHUB_REPO env var if set
         gh_repo = os.environ.get("GITHUB_REPO", "mahesh-mettireddy/TriagePilot")

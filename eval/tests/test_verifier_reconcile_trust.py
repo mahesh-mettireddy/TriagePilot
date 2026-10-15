@@ -460,7 +460,7 @@ class TestReportAgent:
         assert len(report.questions_for_client) > 0
         assert len(report.questions_for_client) <= 2
 
-    def test_jira_draft_generated_with_hypothesis(self):
+    def test_jira_draft_requires_verified_proof(self):
         ticket = _make_ticket()
         plan = _make_plan()
         trust = compute_trust([], [], [])
@@ -471,9 +471,7 @@ class TestReportAgent:
         report = run_async(generate_report(
             ticket, plan, [], [], [], hypotheses, trust, "inv-test-004"
         ))
-        assert report.jira_draft is not None
-        assert "TriagePilot" in report.jira_draft.title
-        assert len(report.jira_draft.labels) > 0
+        assert report.jira_draft is None
 
     def test_kb_gap_detected_on_stale_doc(self):
         ticket = _make_ticket()

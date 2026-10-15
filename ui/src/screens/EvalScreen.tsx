@@ -39,6 +39,7 @@ export const EvalScreen: React.FC = () => {
 
   const modes = evalData?.modes || [];
   const findings = evalData?.key_findings || [];
+  const modeC = modes.find((mode: any) => mode.id === 'mode_c');
 
   return (
     <div className="space-y-6">
@@ -52,29 +53,44 @@ export const EvalScreen: React.FC = () => {
                 BENCHMARK SUITE
               </span>
               <span className="text-xs text-slate-500 font-mono">
-                8 Golden Scenarios • 15 Git Commits • 3 Architectural Modes
+                 8 Golden Scenarios • 3 Architectural Modes
               </span>
             </div>
             <h2 className="text-2xl font-bold text-slate-100">
               Architectural Ablation & Evaluation
             </h2>
             <p className="text-sm text-slate-400 mt-1 max-w-3xl">
-              Empirical verification comparing single-prompt baseline, unverified multi-agent swarm, and TriagePilot&apos;s verified hexagonal architecture with mathematical trust score.
+               Recorded benchmark comparison. Fresh live or replay evaluation runs expose their own run ID, execution mode, and raw scenario results.
             </p>
           </div>
 
           <div className="flex items-center gap-3">
             <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 text-center">
               <span className="text-[10px] uppercase text-slate-500 block">Root-Cause Accuracy</span>
-              <span className="text-xl font-black text-emerald-400 font-mono">96.0%</span>
+               <span className="text-xl font-black text-emerald-400 font-mono">{modeC ? `${(modeC.root_cause_hit_rate * 100).toFixed(1)}%` : '—'}</span>
             </div>
             <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 text-center">
               <span className="text-[10px] uppercase text-slate-500 block">False Conclusion Rate</span>
-              <span className="text-xl font-black text-emerald-400 font-mono">0.0%</span>
+               <span className="text-xl font-black text-emerald-400 font-mono">{modeC ? `${(modeC.false_conclusion_rate * 100).toFixed(1)}%` : '—'}</span>
             </div>
           </div>
         </div>
       </div>
+
+      {evalData && (
+        <div className="bg-slate-950/80 border border-amber-500/30 rounded-xl p-4 text-xs text-slate-300">
+          <div className="flex flex-wrap items-center gap-2 mb-2">
+            <span className="font-mono font-bold text-amber-300">{evalData.execution_mode || 'recorded_benchmark'}</span>
+            <span className="text-slate-500">Run {evalData.run_id || 'RECORDED-ABLATION-2026-01'}</span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-slate-400 font-mono text-[11px]">
+            <span>Commit: {evalData.commit || 'recorded benchmark'}</span>
+            <span>Ground truth: {evalData.ground_truth_version || 'recorded manifest'}</span>
+            <span>Provider: {evalData.provider || 'recorded'}</span>
+          </div>
+          <p className="mt-2 text-slate-400">{evalData.provenance || 'Fresh evaluation metadata is returned by the evaluation run endpoint.'}</p>
+        </div>
+      )}
 
       {/* 3 Modes Comparative Hero Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

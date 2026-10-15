@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Any, Optional
 
 
 # ---------------------------------------------------------------------------
@@ -49,6 +49,27 @@ _PII_PATTERNS: list[tuple[re.Pattern, str]] = [
 
     # 6. Account numbers: 10–16 contiguous digits (catches bank accounts, card numbers).
     (re.compile(r"\b\d{10,16}\b"), "[ACCT_REDACTED]"),
+
+    # 7. Commonly labelled customer names.  This intentionally requires a
+    # label so ordinary prose and product names are not destroyed.
+    (re.compile(
+        r"(?i)\b(?:name|customer|user|reporter)\s*[:=-]\s*"
+        r"[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2}"
+    ), "[NAME_REDACTED]"),
+
+    # Common prose forms and honorifics.  These stay deliberately narrow so
+    # product names and ordinary capitalised words are not blanket-redacted.
+    (re.compile(
+        r"(?i)\b(?:my\s+name\s+is|customer\s+is|reporter\s+is)\s+"
+        r"[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2}"
+    ), "[NAME_REDACTED]"),
+    (re.compile(
+        r"\b(?:Mr|Mrs|Ms|Dr)\.?\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2}\b"
+    ), "[NAME_REDACTED]"),
+
+    # 8. Obfuscated national/account identifiers such as 1234-XX-9012 or
+    # 12XX 34XX 9012.  Do not match transaction IDs or ordinary words.
+    (re.compile(r"\b(?:\d{2,4}[ -]?X{2,4}[ -]?\d{2,4}(?:[ -]?X{2,4})?)\b", re.I), "[ID_REDACTED]"),
 ]
 
 # ---------------------------------------------------------------------------
@@ -154,3 +175,49 @@ def mask_ticket(text: str) -> MaskingResult:
     if not text or not text.strip():
         raise ValueError("Ticket text must not be empty")
     return scrub_pii(text)
+
+
+def mask_for_model(text: str, *, max_chars: int = 12000) -> str:
+    """Return bounded, deterministic-safe text for every model/provider call."""
+    if not text:
+        return ""
+    return scrub_pii(text[:max_chars]).masked_text
+
+
+def quarantine_prompt_injection(text: str, *, max_chars: int = 12000) -> str:
+    """Mask PII and replace instruction-like phrases with inert markers.
+
+    Detection remains available to policy code through :func:`detect_prompt_injection`;
+    this helper is only for model-boundary content so untrusted source text is
+    treated as data rather than executable instructions.
+    """
+    safe = mask_for_model(text, max_chars=max_chars)
+    for phrase in _INJECTION_PHRASES:
+        safe = re.sub(re.escape(phrase), "[INJECTION_QUARANTINED]", safe, flags=re.IGNORECASE)
+    return safe
+
+
+def redact_evidence_for_output(cards: list[Any]) -> list[Any]:
+    """Copy evidence cards and remove PII before reports or API responses.
+
+    Verification runs before this function and therefore still validates the
+    source's original snippet.  The returned copies retain the proof pointer,
+    card ID, and verifier status while masking claim/snippet text and any
+    pointer values that could contain a sensitive field.
+    """
+    redacted: list[Any] = []
+    for card in cards:
+        try:
+            clone = card.model_copy(deep=True)
+            clone.snippet = mask_for_model(clone.snippet, max_chars=400)
+            clone.claim = mask_for_model(clone.claim, max_chars=200)
+            clone.pointer = {
+                str(key): mask_for_model(str(value), max_chars=200)
+                if key not in {"line_start", "line_end"}
+                else value
+                for key, value in clone.pointer.items()
+            }
+            redacted.append(clone)
+        except AttributeError:
+            redacted.append(card)
+    return redacted

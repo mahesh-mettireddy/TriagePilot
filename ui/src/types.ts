@@ -70,6 +70,8 @@ export interface AgentRoutingPlan {
   active_agents: Array<'HistoryAgent' | 'KnowledgeAgent' | 'LogsAgent' | 'CodeAgent' | 'RecordAgent'>;
   skipped_agents: Record<string, string>;
   max_tool_calls: number;
+  tool_calls_used?: number;
+  tool_budget_rejections?: number;
   injection_detected: boolean;
   injection_note?: string;
 }
@@ -156,6 +158,18 @@ export interface HumanDecision {
   reason?: string;
   edits_diff?: string;
   write_back_ref?: string;
+  report_revision?: number;
+  report_hash?: string;
+  decision_id?: string;
+}
+
+export interface ExecutionMetadata {
+  provider: string;
+  mode: 'vertex_ai' | 'api_key' | 'fallback' | 'replay';
+  configured: boolean;
+  models: string[];
+  calls: Array<{ operation: string; model: string; mode: string; error?: string }>;
+  fallback_reason?: string;
 }
 
 export interface ReportOutput {
@@ -186,11 +200,19 @@ export interface ReportOutput {
   suggested_diagnostic_queries: string[];
   decision: HumanDecision;
   audit_ref: string;
+  execution: ExecutionMetadata;
+  report_revision: number;
+  report_hash: string;
+  write_back_allowed?: boolean;
+  needs_human_edit?: boolean;
   metrics: {
     tool_calls: number;
     tokens: number;
     latency_ms: number;
     cost_usd: number;
+    model_calls?: number;
+    tool_budget_limit?: number;
+    tool_budget_rejections?: number;
   };
 }
 

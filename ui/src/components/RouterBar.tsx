@@ -64,11 +64,15 @@ export const RouterBar: React.FC<RouterBarProps> = ({ routingPlan, activeAgents 
           </span>
         </div>
 
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1.5 text-xs text-slate-400">
-            <Cpu className="w-3.5 h-3.5 text-teal-400" />
-            <span>Budget: <strong className="text-slate-200">{routingPlan.max_tool_calls || 12}</strong> calls</span>
-          </div>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5 text-xs text-slate-400">
+              <Cpu className="w-3.5 h-3.5 text-teal-400" />
+              <span>
+                Budget: <strong className="text-slate-200">{routingPlan.tool_calls_used || 0}</strong> used /{' '}
+                <strong className="text-slate-200">{routingPlan.max_tool_calls || 12}</strong> max
+                <span className="text-teal-300"> ({Math.max(0, (routingPlan.max_tool_calls || 12) - (routingPlan.tool_calls_used || 0))} remaining)</span>
+              </span>
+            </div>
 
           {routingPlan.injection_detected ? (
             <div className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-rose-950 text-rose-300 border border-rose-500/50 animate-pulse">

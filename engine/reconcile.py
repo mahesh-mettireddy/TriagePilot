@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 from typing import Any, Optional
 
 from engine.schemas import (
@@ -45,7 +46,10 @@ def _parse_ts(ts_str: str) -> Optional[datetime]:
     try:
         # Handle Z suffix
         ts_str = ts_str.replace("Z", "+00:00")
-        return datetime.fromisoformat(ts_str)
+        parsed = datetime.fromisoformat(ts_str)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
     except (ValueError, TypeError):
         return None
 
@@ -70,8 +74,9 @@ def _check_time_mismatch(
     text = ticket.masked_text or ticket.text
     # Match various timestamp formats
     ts_patterns = [
-        r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}",
-        r"(\d{1,2}:\d{2}\s*(?:AM|PM)\s*IST)",
+        r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:Z|[+-]\d{2}:?\d{2})?",
+        r"(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\s+\d{1,2}(?::\d{2})?\s*(?:AM|PM)?(?:\s*IST)?",
+        r"\d{1,2}:\d{2}\s*(?:AM|PM)\s*IST",
     ]
     client_ts_str = None
     for pattern in ts_patterns:
@@ -83,8 +88,47 @@ def _check_time_mismatch(
     if not client_ts_str:
         return None
 
-    # Parse client timestamp (best effort)
+    # Parse client timestamp (best effort).  Relative day/time claims are
+    # resolved against the ticket creation date in the ticket's local zone.
     client_dt = _parse_ts(client_ts_str)
+    if client_dt is None:
+        created_dt = _parse_ts(ticket.created_at)
+        if created_dt:
+            day_match = re.match(
+                r"(?i)(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\s+"
+                r"(\d{1,2})(?::(\d{2}))?\s*(am|pm)?(?:\s*ist)?",
+                client_ts_str,
+            )
+            time_match = re.match(r"(?i)(\d{1,2}):(\d{2})\s*(am|pm)\s*ist", client_ts_str)
+            local_zone = ZoneInfo("Asia/Kolkata") if "ist" in client_ts_str.lower() else created_dt.tzinfo
+            local_created = created_dt.astimezone(local_zone or timezone.utc)
+            if day_match:
+                weekday = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"].index(day_match.group(1).lower())
+                days_back = (local_created.weekday() - weekday) % 7
+                hour = int(day_match.group(2))
+                minute = int(day_match.group(3) or 0)
+                meridiem = (day_match.group(4) or "").lower()
+                if meridiem == "pm" and hour < 12:
+                    hour += 12
+                if meridiem == "am" and hour == 12:
+                    hour = 0
+                candidate_date = local_created.date() - timedelta(days=days_back)
+                candidate = datetime(candidate_date.year, candidate_date.month, candidate_date.day, hour, minute, tzinfo=local_zone)
+                if candidate > local_created:
+                    candidate -= timedelta(days=7)
+                client_dt = candidate.astimezone(timezone.utc)
+            elif time_match:
+                hour = int(time_match.group(1))
+                meridiem = time_match.group(3).lower()
+                if meridiem == "pm" and hour < 12:
+                    hour += 12
+                if meridiem == "am" and hour == 12:
+                    hour = 0
+                candidate = datetime(
+                    local_created.year, local_created.month, local_created.day,
+                    hour, int(time_match.group(2)), tzinfo=local_zone,
+                )
+                client_dt = candidate.astimezone(timezone.utc)
 
     # Find earliest ERROR log card timestamp
     earliest_log_ts: Optional[datetime] = None

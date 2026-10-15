@@ -37,7 +37,8 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from engine.masking import detect_prompt_injection
+from engine.masking import detect_prompt_injection, mask_for_model, quarantine_prompt_injection
+from engine.ai_runtime import get_ai_runtime
 from engine.schemas import (
     AgentRoutingPlan,
     HumanContext,
@@ -45,7 +46,9 @@ from engine.schemas import (
     Severity,
     TicketClass,
     TicketDTO,
+    PlannerLLMOutput,
 )
+from engine.tool_budget import MAX_TOOL_CALLS
 
 logger = logging.getLogger(__name__)
 
@@ -112,7 +115,9 @@ _ROUTING_TABLE: dict[TicketClass, tuple[list[str], str]] = {
 # (used when GOOGLE_API_KEY is absent or LLM call fails)
 # ---------------------------------------------------------------------------
 _KEYWORD_RULES: list[tuple[list[str], TicketClass]] = [
-    (["hack", "breach", "attack", "exploit", "vulnerability", "sql injection", "xss"], TicketClass.SECURITY_SENSITIVE),
+    (["hack", "breach", "attack", "exploit", "vulnerability", "sql injection", "xss",
+      "credential", "password", "secret", "api key", "access token", "private key",
+      "account takeover", "exfiltrat", "malware", "ransomware", "unauthorized access"], TicketClass.SECURITY_SENSITIVE),
     (["known error", "ke-", "holiday", "settlement delay", "settlement is delayed", "batch settlement", "bank holiday"], TicketClass.KNOWN_ERROR),
     (["how do i", "how to", "how can i", "guide", "add beneficiary", "step by step", "user manual", "documentation on how"], TicketClass.HOW_TO_USER_ERROR),
     (["transfers not working", "not working urgently", "no details", "halted. please help"], TicketClass.INSUFFICIENT_INFO),
@@ -129,6 +134,13 @@ _SEVERITY_RULES: list[tuple[list[str], Severity]] = [
     (["high", "p2", "many users", "significant", "degraded"], Severity.P2),
     (["low", "p4", "cosmetic", "minor", "nice to have"], Severity.P4),
 ]
+
+_SECURITY_TERMS = (
+    "hack", "breach", "exploit", "vulnerability", "sql injection", "xss",
+    "credential", "password", "secret", "api key", "access token",
+    "private key", "account takeover", "exfiltrat", "malware", "ransomware",
+    "unauthorized access",
+)
 
 # ---------------------------------------------------------------------------
 # LLM system prompt
@@ -185,21 +197,7 @@ class Planner:
     """
 
     def __init__(self) -> None:
-        self._client = self._init_genai_client()
-
-    @staticmethod
-    def _init_genai_client():
-        """Lazy-initialise the google-genai client; return None on any failure."""
-        api_key = os.environ.get("GOOGLE_API_KEY", "")
-        if not api_key:
-            logger.info("GOOGLE_API_KEY not set — using deterministic keyword classifier")
-            return None
-        try:
-            from google import genai  # type: ignore[import]
-            return genai.Client(api_key=api_key)
-        except Exception as exc:
-            logger.warning("Failed to init google-genai client: %s — using fallback", exc)
-            return None
+        self._runtime = get_ai_runtime()
 
     # ------------------------------------------------------------------
     # Public entry point
@@ -216,14 +214,24 @@ class Planner:
           3. LLM or keyword classify.
           4. Apply deterministic routing rules.
         """
-        text = ticket.masked_text or ticket.text
+        # Direct callers may construct TicketDTO without running the ingestion
+        # endpoint.  Mask again here so every planner/model call is safe.
+        text = mask_for_model(ticket.masked_text or ticket.text)
+        if ticket.human_context:
+            masked_context = ticket.human_context.model_copy(
+                update={"message": mask_for_model(ticket.human_context.message)}
+            )
+            ticket = ticket.model_copy(update={"masked_text": text, "human_context": masked_context})
+        else:
+            ticket = ticket.model_copy(update={"masked_text": text})
 
         # Step 1 — injection guard (second pass on masked text)
         injected, inj_note = detect_prompt_injection(text)
+        model_text = quarantine_prompt_injection(text)
         if injected:
             logger.warning("Injection detected in planner: %s", inj_note)
             # Only fast-exit if SECURITY_SENSITIVE; otherwise log and continue
-            if any(kw in text.lower() for kw in ["hack", "breach", "exploit", "sql injection"]):
+            if any(kw in text.lower() for kw in _SECURITY_TERMS):
                 return self._build_plan(
                     ticket_class=TicketClass.SECURITY_SENSITIVE,
                     severity=Severity.P1,
@@ -248,8 +256,8 @@ class Planner:
             ticket_class = upgraded_class
             severity = Severity.P3
             entities = extra_entities
-        elif self._client:
-            ticket_class, severity, entities = await self._llm_classify(text)
+        elif self._runtime.status.configured:
+            ticket_class, severity, entities = await self._llm_classify(model_text)
         else:
             ticket_class, severity, entities = self._keyword_classify(text)
 
@@ -317,25 +325,21 @@ class Planner:
     ) -> tuple[TicketClass, Severity, dict[str, Any]]:
         """Call gemini-2.5-flash to classify *text*. Falls back on any error."""
         try:
-            import asyncio
             from google.genai import types  # type: ignore[import]
 
             prompt = f"{_CLASSIFIER_PROMPT}\n\n---\nTICKET TEXT:\n{text[:1400]}\n---"
 
-            # Run synchronous SDK call in thread pool to keep async-friendly
-            loop = asyncio.get_event_loop()
-            response = await loop.run_in_executor(
-                None,
-                lambda: self._client.models.generate_content(
-                    model="gemini-2.5-flash",
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        response_mime_type="application/json",
-                        temperature=0.0,
-                    ),
+            raw = await self._runtime.generate_json(
+                model="gemini-2.5-flash",
+                prompt=prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    temperature=0.0,
                 ),
+                operation="ticket_classification",
             )
-            raw = response.text.strip()
+            if raw is None:
+                return self._keyword_classify(text)
             # Strip any accidental markdown fences
             raw = re.sub(r"^```(?:json)?\s*", "", raw)
             raw = re.sub(r"\s*```$", "", raw)
@@ -343,8 +347,9 @@ class Planner:
             data = json.loads(raw)
             ticket_class = TicketClass(data.get("ticket_class", "CODE_DEFECT"))
             severity = Severity(data.get("severity", "P3"))
-            entities = data.get("extracted_entities", {})
-            return ticket_class, severity, entities
+            parsed = PlannerLLMOutput.model_validate(data)
+            entities = self._sanitize_entities(parsed.extracted_entities)
+            return parsed.ticket_class, parsed.severity, entities
 
         except Exception as exc:
             logger.warning("LLM classification failed (%s) — using keyword fallback", exc)
@@ -393,6 +398,19 @@ class Planner:
         }
         return ticket_class, severity, entities
 
+    @staticmethod
+    def _sanitize_entities(entities: dict[str, Any]) -> dict[str, Any]:
+        def clean(value: Any) -> Any:
+            if isinstance(value, dict):
+                return {str(k): clean(v) for k, v in value.items()}
+            if isinstance(value, list):
+                return [clean(v) for v in value]
+            if isinstance(value, str):
+                return mask_for_model(value, max_chars=200)
+            return value
+
+        return clean(entities)
+
     # ------------------------------------------------------------------
     # Routing rule application
     # ------------------------------------------------------------------
@@ -440,7 +458,7 @@ class Planner:
         elif ticket_class == TicketClass.INSUFFICIENT_INFO:
             max_tool_calls = 3
         else:
-            max_tool_calls = 12
+            max_tool_calls = MAX_TOOL_CALLS
 
         return active, skipped, max_tool_calls
 

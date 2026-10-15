@@ -193,7 +193,7 @@ export const AuditDrawer: React.FC<AuditDrawerProps> = ({ isOpen, onClose, inves
 
         {/* Footer */}
         <div className="p-4 border-t border-slate-800 bg-slate-950/80 flex justify-between items-center text-xs text-slate-500">
-          <span>SHA-256 Merkle-linked audit records</span>
+           <span>SHA-256 hash-chained audit records</span>
           <button
             onClick={onClose}
             className="px-4 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium transition-colors"

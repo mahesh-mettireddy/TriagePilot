@@ -74,6 +74,12 @@ _LEAK_PATTERNS: list[tuple[str, re.Pattern]] = [
         r"\b(TXN|INC|CHG|KE|REQ|CR|JIRA|BUG|LOG)-\d{3,}\b",
         re.IGNORECASE,
     )),
+    # Customer PII must not be introduced by a generated draft either.
+    ("email", re.compile(r"[\w.+%\-]+@[\w.\-]+\.[A-Za-z]{2,}")),
+    ("phone", re.compile(r"(?<!\d)(?:\+91[\s\-]?|0)?[6-9]\d{9}(?!\d)")),
+    ("account_number", re.compile(r"\b\d{10,16}\b")),
+    ("pan", re.compile(r"\b[A-Z]{5}\d{4}[A-Z]\b")),
+    ("ifsc", re.compile(r"\b[A-Z]{4}0[A-Z0-9]{6}\b")),
 ]
 
 
@@ -143,9 +149,9 @@ def sanitize_or_flag(draft: str) -> tuple[str, LeakCheckResult]:
         elif label == "internal_hostname":
             working = pattern.sub("[HOST_REDACTED]", working)
         elif label == "internal_record_id":
-            # Record IDs like TXN-2041 are sometimes legitimately customer-visible
-            # if the customer already provided them — keep but do not auto-expose new ones.
-            pass
+            working = pattern.sub("[REFERENCE_REDACTED]", working)
+        elif label in {"email", "phone", "account_number", "pan", "ifsc"}:
+            working = pattern.sub("[PII_REDACTED]", working)
 
     result = check_customer_reply(working)
     return working, result

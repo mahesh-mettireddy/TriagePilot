@@ -3,10 +3,10 @@
 > *"Every conclusion ships with proof, or it doesn't ship."*
 
 [![Live Cloud Run Demo](https://img.shields.io/badge/Live%20Demo-Cloud%20Run%20Active-success?style=for-the-badge&logo=googlecloud)](https://triagepilot-ywgad5nv3a-uc.a.run.app)
-[![Build & Verification Status](https://img.shields.io/badge/Verification-180%2F180%20Tests%20Passing-emerald?style=for-the-badge&logo=pytest)](eval/tests/)
+[![Build & Verification Status](https://img.shields.io/badge/Verification-Pytest%20Suite-emerald?style=for-the-badge&logo=pytest)](eval/tests/)
 [![Google Cloud Run](https://img.shields.io/badge/Google%20Cloud-Cloud%20Run%20Ready%20(Warm%20Instance)-4285F4?style=for-the-badge&logo=googlecloud)](https://triagepilot-ywgad5nv3a-uc.a.run.app)
 [![Gemini 2.5 on Vertex AI](https://img.shields.io/badge/AI%20Core-Gemini%202.5%20Pro%20%26%20Flash%20on%20Vertex%20AI-4285F4?style=for-the-badge&logo=googlecloud)](engine/)
-[![Audit Integrity](https://img.shields.io/badge/Audit%20Ledger-SHA--256%20Merkle%20Chain-teal?style=for-the-badge)](https://triagepilot-ywgad5nv3a-uc.a.run.app/api/audit/verify)
+[![Audit Integrity](https://img.shields.io/badge/Audit%20Ledger-SHA--256%20Hash%20Chain-teal?style=for-the-badge)](https://triagepilot-ywgad5nv3a-uc.a.run.app/api/audit/verify)
 
 **Track:** Future of Work & Enterprise Productivity  
 **Competition:** Google Cloud AI Builder Cup 2026  
@@ -84,7 +84,7 @@ flowchart TD
     end
 
     subgraph AuditLog ["5. CRYPTOGRAPHIC PROVABILITY"]
-        Ingestion -.-> AUDIT["SHA-256 Merkle-Linked Immutable Audit Ledger"]
+        Ingestion -.-> AUDIT["SHA-256 Hash-Chained Audit Ledger"]
         Core -.-> AUDIT
         VerifierEngine -.-> AUDIT
         HumanGate -.-> AUDIT
@@ -133,7 +133,7 @@ $$\text{Trust} = \text{clamp}\Big(c_{\text{ver}} + c_{\text{div}} + c_{\text{spe
 Zero automated write-backs occur without human oversight. The SRE reviews the verified brief, optionally edits the client reply, and signs off before mutations push to Jira.
 
 ### 6. 🔒 Cryptographic SHA-256 Audit Ledger (`audit.py`)
-Every pipeline step is appended to an immutable SHA-256 Merkle-linked hash chain:
+Every pipeline step is appended to an immutable SHA-256 hash-chained audit ledger:
 $$H_i = \text{SHA256}(H_{i-1} \,||\, \text{timestamp} \,||\, \text{step} \,||\, \text{payload})$$
 Any retroactive modification immediately invalidates the cryptographic verification badge.
 
@@ -141,7 +141,11 @@ Any retroactive modification immediately invalidates the cryptographic verificat
 
 ## 📊 Evaluation & Ablation Results
 
-Tested across all **8 Golden Scenarios** and **15 Git Commits** in `transfers-demo-app`:
+The A/B/C table below is a **recorded benchmark** (`recorded_benchmark`), not a
+claim that the current request freshly reproduced those numbers. Use
+`POST /api/eval/run` or `python scripts/run_eval.py` for a new run with a run ID,
+source commit, ground-truth digest, execution mode, raw scenario results, latency,
+and cost metadata.
 
 | Metric | Mode A: Single-Prompt Baseline | Mode B: Multi-Agent Swarm (No Verifier) | Mode C: TriagePilot (Our System) |
 | :--- | :---: | :---: | :---: |
@@ -225,6 +229,14 @@ Open the deployed production URL:
 **[https://triagepilot-ywgad5nv3a-uc.a.run.app](https://triagepilot-ywgad5nv3a-uc.a.run.app)**  
 *(Instance is pre-warmed with `--min-instances 1` for instant `<150ms` response times).*
 
+Check the active revision before relying on the public demo:
+```bash
+curl -fsS https://triagepilot-ywgad5nv3a-uc.a.run.app/healthz
+curl -fsS https://triagepilot-ywgad5nv3a-uc.a.run.app/readyz
+```
+Live Vertex AI and Firestore readiness depend on the deployment environment;
+the no-credentials replay path remains the reproducible judge fallback.
+
 ---
 
 ### Option 2: One-Click Docker Compose
@@ -271,7 +283,7 @@ GCP_PROJECT_ID=your-gcp-project-id ./scripts/deploy_cloudrun.sh
 ## 🧪 Running the Verification Test Suite
 
 ```bash
-# Run all 180 unit & integration tests
+# Run the complete backend unit & integration suite
 python -m pytest eval/tests/ -v
 
 # Run the 47-task scenario & fixture audit suite
@@ -280,6 +292,25 @@ node scripts/audit_suite.mjs
 # Run the standalone CLI benchmark scorecard
 python scripts/run_eval.py
 ```
+
+### Judge quickstart and honest limitations
+
+1. Open the cockpit and run **S01** in `REPLAY` mode to demonstrate the complete
+   event stream, verified evidence, trust rationale, and maker-checker gate.
+2. Run **S04** to show stale documentation, dropped/injected source material, and
+   the `BEHAVIOUR_MISMATCH` proof path.
+3. Run **S11** to show low-trust abstention, the terminal policy halt, and the
+   client-reply resume flow.
+4. Use the audit drawer to verify the **SHA-256 hash-chained audit ledger**.
+5. Use `LIVE` only when Vertex AI credentials are intentionally configured. A
+   failed live call is labeled `FALLBACK`; `REPLAY` is explicitly labeled and does
+   not require credentials.
+
+Known limitations: fixture adapters stand in for external ITSM/log/document
+systems, Firestore is opt-in outside production, write-back is a fixture adapter
+unless a real integration is configured, and cost figures are estimates unless
+they come from a live evaluation run. Recorded ablation values are labeled as
+such and must not be presented as freshly measured results.
 
 ---
 

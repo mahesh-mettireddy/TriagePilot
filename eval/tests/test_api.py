@@ -23,6 +23,16 @@ def test_healthz():
     assert response.json() == {"status": "ok"}
 
 
+def test_readyz_reports_runtime_configuration():
+    response = client.get("/readyz")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "ok"
+    assert data["ai_mode"] in {"fallback", "vertex_ai", "api_key"}
+    assert data["persistence"] in {"memory", "firestore"}
+    assert isinstance(data["audit"], str)
+
+
 def test_list_scenarios():
     response = client.get("/api/scenarios")
     assert response.status_code == 200
@@ -63,8 +73,7 @@ def test_audit_verify():
 def test_investigation_lifecycle():
     # 1. Start investigation
     payload = {
-        "scenario_id": "S01",
-        "text": "Same-day transfers rejected after 4 PM IST. Account 1234567890 debited.",
+        "scenario_id": "S09",
         "mode": "live",
     }
     resp = client.post("/api/investigations?wait=true", json=payload)
@@ -85,6 +94,8 @@ def test_investigation_lifecycle():
     assert report["investigation_id"] == inv_id
     assert report["verified_claims_count"] > 0
     assert "leak_check" in report
+    assert report["execution"]["mode"] in {"fallback", "vertex_ai", "api_key", "replay"}
+    assert "provider" in report["execution"]
 
     # 3. Check audit chain
     chain_resp = client.get(f"/api/audit/chain?investigation_id={inv_id}")
@@ -97,6 +108,9 @@ def test_investigation_lifecycle():
         "status": "approved",
         "by": "lead-engineer@bank.com",
         "reason": "Verified cutoff calculation defect in cutoff.py",
+        "report_revision": report["report_revision"],
+        "report_hash": report["report_hash"],
+        "decision_id": "decision-test-api-001",
     }
     dec_resp = client.post(f"/api/investigations/{inv_id}/decision", json=decision_payload)
     assert dec_resp.status_code == 200

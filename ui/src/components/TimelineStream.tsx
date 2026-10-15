@@ -56,6 +56,10 @@ export const TimelineStream: React.FC<TimelineStreamProps> = ({
         return { label: 'Trust Evaluated', color: 'text-violet-400', bg: 'bg-violet-950/65 border-violet-500/30', icon: Activity };
       case 'report_ready':
         return { label: 'Triage Report Ready', color: 'text-emerald-400', bg: 'bg-emerald-950/65 border-emerald-500/30', icon: FileText };
+      case 'policy_halted':
+        return { label: 'Policy Halted — No Write-Back', color: 'text-rose-400', bg: 'bg-rose-950/65 border-rose-500/30', icon: ShieldCheck };
+      case 'writeback_blocked':
+        return { label: 'Write-Back Blocked', color: 'text-rose-400', bg: 'bg-rose-950/65 border-rose-500/30', icon: XCircle };
       case 'awaiting_approval':
         return { label: 'Awaiting Human Sign-Off', color: 'text-amber-400', bg: 'bg-amber-950/65 border-amber-500/30', icon: Clock };
       default:
@@ -115,13 +119,13 @@ export const TimelineStream: React.FC<TimelineStreamProps> = ({
             Awaiting investigation events...
           </div>
         ) : (
-          events.map((e, idx) => {
+          events.map((e) => {
             const meta = getEventMeta(e.type);
             const Icon = meta.icon;
 
             return (
               <div
-                key={idx}
+                key={e.seq}
                 className={`p-2.5 rounded-lg border text-xs transition-all duration-150 ${meta.bg}`}
               >
                 <div className="flex items-center justify-between gap-2 mb-1">

@@ -24,6 +24,8 @@ explicit reason (e.g. "Line 42 in cutoff.py does not contain claimed snippet").
 from __future__ import annotations
 
 import logging
+import re
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from engine.ports.base import CodePort, KnowledgePort, LogPort, RecordPort
@@ -47,6 +49,18 @@ def _normalise(text: str) -> str:
     Strips leading/trailing whitespace and collapses internal whitespace.
     """
     return " ".join(text.split()).lower().strip()
+
+
+def _parse_timestamp(value: Any) -> Optional[datetime]:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
 
 
 # ---------------------------------------------------------------------------
@@ -102,14 +116,18 @@ def _verify_log(card: EvidenceCard, log_adapter: LogPort, scenario_id: str) -> V
     # Timestamp check (within 1 second tolerance)
     pointer_ts = pointer.get("ts", "")
     log_ts = matching_log.get("ts", "")
-    if pointer_ts and log_ts and pointer_ts[:19] != log_ts[:19]:
-        # Allow 1-second tolerance by comparing the first 18 chars
-        # (YYYY-MM-DDTHH:MM:S — ignoring the last digit of seconds)
-        if pointer_ts[:18] != log_ts[:18]:
-            return VerificationResult(
-                status=VerificationStatus.DROPPED,
-                reason=f"Timestamp mismatch: card says {pointer_ts}, log says {log_ts}",
-            )
+    pointer_dt = _parse_timestamp(pointer_ts)
+    log_dt = _parse_timestamp(log_ts)
+    if pointer_dt is None or log_dt is None:
+        return VerificationResult(
+            status=VerificationStatus.DROPPED,
+            reason="Log card must include parseable pointer and source timestamps",
+        )
+    if abs((pointer_dt - log_dt).total_seconds()) > 1:
+        return VerificationResult(
+            status=VerificationStatus.DROPPED,
+            reason=f"Timestamp mismatch: card says {pointer_ts}, log says {log_ts}",
+        )
 
     return VerificationResult(status=VerificationStatus.VERIFIED)
 
@@ -126,11 +144,27 @@ def _verify_code(card: EvidenceCard, code_adapter: CodePort) -> VerificationResu
             reason="Code card has no file path in pointer",
         )
 
-    line_start = pointer.get("line_start", 1)
-    line_end = pointer.get("line_end", line_start)
+    if not sha or not isinstance(sha, str) or not re.fullmatch(r"[0-9a-fA-F]{40}", sha):
+        return VerificationResult(
+            status=VerificationStatus.DROPPED,
+            reason="Code card must include a valid 40-character commit SHA",
+        )
+
+    line_start = pointer.get("line_start")
+    line_end = pointer.get("line_end")
+    if (
+        not isinstance(line_start, int)
+        or not isinstance(line_end, int)
+        or line_start < 1
+        or line_end < line_start
+    ):
+        return VerificationResult(
+            status=VerificationStatus.DROPPED,
+            reason="Code card has an invalid line range",
+        )
 
     try:
-        result = code_adapter.read_lines(path, line_start, line_end, sha or None)
+        result = code_adapter.read_lines(path, line_start, line_end, sha)
     except Exception as exc:
         return VerificationResult(
             status=VerificationStatus.DROPPED,
@@ -138,7 +172,12 @@ def _verify_code(card: EvidenceCard, code_adapter: CodePort) -> VerificationResu
         )
 
     content = result.get("content", "")
-    if not content and not content.strip():
+    if result.get("sha") != sha:
+        return VerificationResult(
+            status=VerificationStatus.DROPPED,
+            reason=f"Code adapter returned SHA {result.get('sha')} instead of requested {sha}",
+        )
+    if not content or not content.strip():
         return VerificationResult(
             status=VerificationStatus.DROPPED,
             reason=f"File {path} lines {line_start}-{line_end} returned empty content",
@@ -147,18 +186,13 @@ def _verify_code(card: EvidenceCard, code_adapter: CodePort) -> VerificationResu
     # Snippet substring check (normalised)
     if card.snippet and _normalise(card.snippet[:60]):
         if _normalise(card.snippet[:60]) not in _normalise(content):
-            # For stub/fallback adapters, the content itself may be a stub marker
-            if "[STUB]" in content:
-                # Accept stubs during standalone development
-                pass
-            else:
-                return VerificationResult(
-                    status=VerificationStatus.DROPPED,
-                    reason=(
-                        f"Snippet not found in {path} lines {line_start}-{line_end}. "
-                        f"Claimed: '{card.snippet[:60]}'"
-                    ),
-                )
+            return VerificationResult(
+                status=VerificationStatus.DROPPED,
+                reason=(
+                    f"Snippet not found in {path} lines {line_start}-{line_end}. "
+                    f"Claimed: '{card.snippet[:60]}'"
+                ),
+            )
 
     # Attach github_permalink if not already set
     if not card.github_permalink and result.get("github_permalink"):
@@ -191,6 +225,11 @@ def _verify_doc(card: EvidenceCard, knowledge_adapter: KnowledgePort) -> Verific
         return VerificationResult(
             status=VerificationStatus.DROPPED,
             reason=f"Page '{page_id}' or section '{section}' not found in knowledge base",
+        )
+    if doc_section.get("page_id") != page_id or doc_section.get("section") != section:
+        return VerificationResult(
+            status=VerificationStatus.DROPPED,
+            reason=f"Knowledge adapter returned a different pointer for {page_id}/{section}",
         )
 
     # Snippet substring check
@@ -261,19 +300,34 @@ def _verify_record(
             reason=f"Transfer record '{record_id}' not found in scenario {scenario_id}",
         )
 
-    # Verify that the field mentioned in the snippet actually matches
+    required_fields = {"transfer_id", "status", "created_at"}
+    missing = sorted(field for field in required_fields if field not in record)
+    if missing:
+        return VerificationResult(
+            status=VerificationStatus.DROPPED,
+            reason=f"Record {record_id} is missing required fields: {', '.join(missing)}",
+        )
+    if record.get("transfer_id") != record_id:
+        return VerificationResult(
+            status=VerificationStatus.DROPPED,
+            reason=f"Record identity mismatch: expected {record_id}",
+        )
+
     field = pointer.get("field", "status")
-    actual_value = str(record.get(field, ""))
-    if actual_value and actual_value.lower() not in _normalise(card.snippet):
-        # Partial match check
-        if actual_value.lower() not in card.snippet.lower():
-            return VerificationResult(
-                status=VerificationStatus.DROPPED,
-                reason=(
-                    f"Record {record_id} field '{field}' = '{actual_value}' "
-                    f"but snippet says: '{card.snippet[:80]}'"
-                ),
-            )
+    if field not in record:
+        return VerificationResult(
+            status=VerificationStatus.DROPPED,
+            reason=f"Record {record_id} does not contain supported field '{field}'",
+        )
+    actual_value = str(record[field])
+    if not card.snippet or actual_value.lower() not in card.snippet.lower():
+        return VerificationResult(
+            status=VerificationStatus.DROPPED,
+            reason=(
+                f"Record {record_id} field '{field}' = '{actual_value}' "
+                f"but snippet says: '{card.snippet[:80]}'"
+            ),
+        )
 
     return VerificationResult(status=VerificationStatus.VERIFIED)
 

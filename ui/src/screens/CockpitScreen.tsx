@@ -94,8 +94,8 @@ export const CockpitScreen: React.FC = () => {
         invId,
         (ev) => {
           setEvents((prev) => [...prev, ev]);
-          if (ev.type === 'report_ready' && ev.data?.report) {
-            setReport(ev.data.report);
+          if (ev.type === 'report_ready' && ev.data?.investigation_id) {
+            setReport(ev.data as ReportOutput);
           }
         },
         async () => {
@@ -267,6 +267,37 @@ export const CockpitScreen: React.FC = () => {
 
         {/* COLUMN 2: Routing, SSE Timeline, Pilot Controls (lg:col-span-5) */}
         <div className="lg:col-span-5 space-y-4">
+          {report?.execution && (
+            <div className={`rounded-xl border p-3 text-xs ${
+              report.execution.mode === 'vertex_ai'
+                ? 'bg-emerald-950/30 border-emerald-500/30'
+                : report.execution.mode === 'replay'
+                  ? 'bg-sky-950/30 border-sky-500/30'
+                  : 'bg-amber-950/30 border-amber-500/30'
+            }`}>
+              <div className="flex items-center justify-between">
+                <span className="font-semibold uppercase tracking-wider text-slate-200">
+                  AI Execution Provenance
+                </span>
+                <span className="font-mono font-bold text-slate-200">
+                  {report.execution.mode.toUpperCase()}
+                </span>
+              </div>
+              <div className="mt-1 text-slate-400">
+                Provider: <span className="text-slate-200">{report.execution.provider}</span>
+                {' · '}
+                Models: <span className="text-slate-200">
+                  {report.execution.models.length ? report.execution.models.join(', ') : 'deterministic fallback'}
+                </span>
+              </div>
+              {report.execution.fallback_reason && (
+                <div className="mt-1 text-amber-300">
+                  Fallback: {report.execution.fallback_reason}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Dynamic Router Bar */}
           <RouterBar
             routingPlan={report?.routing_plan}

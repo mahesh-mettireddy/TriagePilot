@@ -58,11 +58,15 @@ export const PilotMiddleControls: React.FC<PilotMiddleControlsProps> = ({
     setSubmitting(true);
     try {
       const decision: HumanDecision = {
-        status: editMode ? 'edited' : 'approved',
+        status: 'approved',
         by: approverName,
         reason: editMode ? 'Human edited summary and client draft' : 'Verified by human reviewer',
         edits_diff: editMode ? `Summary updated: "${editedSummary.slice(0, 60)}..."` : undefined,
-        write_back_ref: `JIRA-SIM-${Math.floor(10000 + Math.random() * 90000)}`,
+        report_revision: report?.report_revision,
+        report_hash: report?.report_hash,
+        decision_id: typeof crypto !== 'undefined' && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `decision-${Date.now()}-${Math.random().toString(16).slice(2)}`,
       };
       const updated = await submitDecision(invId, decision);
       if (onDecisionSubmitted) onDecisionSubmitted(updated);
@@ -165,6 +169,12 @@ export const PilotMiddleControls: React.FC<PilotMiddleControlsProps> = ({
             <span className="font-mono text-slate-500">Signer: {approverName}</span>
           </div>
 
+          {report && !report.write_back_allowed && (
+            <div className="p-2 rounded-lg bg-rose-950/40 border border-rose-500/30 text-xs text-rose-300">
+              Write-back is disabled by policy or the customer-draft leak check. This investigation is terminal until a safe human review path is available.
+            </div>
+          )}
+
           {editMode ? (
             <div className="space-y-2 bg-slate-950 p-3 rounded-lg border border-slate-800">
               <div>
@@ -197,7 +207,7 @@ export const PilotMiddleControls: React.FC<PilotMiddleControlsProps> = ({
           <div className="flex items-center gap-2 pt-1">
             <button
               onClick={handleApprove}
-              disabled={submitting || isStreaming || !report}
+              disabled={submitting || isStreaming || !report || report.write_back_allowed === false}
               className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition-colors shadow-lg shadow-emerald-950/40 disabled:opacity-40"
             >
               <CheckCheck className="w-4 h-4" />

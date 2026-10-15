@@ -106,6 +106,16 @@ class AgentRoutingPlan(BaseModel):
         description="Map of skipped agent name to reason (e.g. {'CodeAgent': 'Pruned: How-To query requires docs only'})"
     )
     max_tool_calls: int = 12
+    tool_calls_used: int = 0
+    tool_budget_rejections: int = 0
+    injection_detected: bool = False
+    injection_note: Optional[str] = None
+
+
+class PlannerLLMOutput(BaseModel):
+    ticket_class: TicketClass
+    severity: Severity = Severity.P3
+    extracted_entities: Dict[str, Any] = Field(default_factory=dict)
     injection_detected: bool = False
     injection_note: Optional[str] = None
 
@@ -195,6 +205,69 @@ class HumanDecision(BaseModel):
     reason: Optional[str] = None
     edits_diff: Optional[str] = None
     write_back_ref: Optional[str] = None
+    # Approval binding is deliberately optional for backwards-compatible clients;
+    # the API binds omitted values to the current report before executing a
+    # fixture write.  Any supplied value must match exactly.
+    report_revision: Optional[int] = None
+    report_hash: Optional[str] = None
+    decision_id: Optional[str] = None
+
+
+class ExecutionMetadata(BaseModel):
+    provider: str = "none"
+    mode: Literal["vertex_ai", "api_key", "fallback", "replay"] = "fallback"
+    configured: bool = False
+    models: List[str] = Field(default_factory=list)
+    calls: List[Dict[str, Any]] = Field(default_factory=list)
+    fallback_reason: Optional[str] = None
+
+
+class ReportDraft(BaseModel):
+    """Schema-constrained Flash output used only to polish a deterministic report."""
+
+    summary: str = Field(..., max_length=4000)
+    customer_reply_draft: str = Field(..., max_length=4000)
+    recommended_actions: List[str] = Field(default_factory=list, max_length=8)
+    questions_for_client: List[ClientQuestion] = Field(default_factory=list, max_length=2)
+
+
+class EvaluationScenarioResult(BaseModel):
+    scenario_id: str
+    status: Literal["passed", "failed", "error"]
+    evidence_count: int = 0
+    verified_cards_count: int = 0
+    dropped_cards_count: int = 0
+    root_cause_hit: bool = False
+    class_match: bool = False
+    citation_validity: float = 0.0
+    dropped_claims: int = 0
+    injection_blocked: Optional[bool] = None
+    trust_score: float = 0.0
+    trust_band: DecisionBand = DecisionBand.LOW
+    abstention: bool = False
+    latency_ms: int = 0
+    cost_usd: float = 0.0
+    false_conclusion: bool = False
+    provider: str = "none"
+    models: List[str] = Field(default_factory=list)
+    execution_mode: Literal["live_evaluation", "replay_evaluation"] = "live_evaluation"
+    injection_expected: bool = False
+    error: Optional[str] = None
+
+
+class EvaluationRun(BaseModel):
+    run_id: str
+    timestamp: str
+    commit: str
+    provider: str
+    models: List[str] = Field(default_factory=list)
+    execution_mode: Literal["recorded_benchmark", "live_evaluation", "replay_evaluation"]
+    scenario_set: List[str] = Field(default_factory=list)
+    ground_truth_version: str
+    latency_ms: int = 0
+    cost_usd: float = 0.0
+    scenario_results: List[EvaluationScenarioResult] = Field(default_factory=list)
+    summary: Dict[str, Any] = Field(default_factory=dict)
 
 
 class ReportOutput(BaseModel):
@@ -225,6 +298,11 @@ class ReportOutput(BaseModel):
     suggested_diagnostic_queries: List[str] = Field(default_factory=list)
     decision: HumanDecision = Field(default_factory=HumanDecision)
     audit_ref: str
+    execution: ExecutionMetadata = Field(default_factory=ExecutionMetadata)
+    report_revision: int = 1
+    report_hash: str = ""
+    write_back_allowed: bool = False
+    needs_human_edit: bool = False
     metrics: Dict[str, Any] = Field(
         default_factory=lambda: {"tool_calls": 0, "tokens": 0, "latency_ms": 0, "cost_usd": 0.0}
     )
@@ -247,9 +325,14 @@ class SSEEvent(BaseModel):
         "abstain",
         "report_ready",
         "awaiting_approval",
+        "awaiting_human",
         "decision",
         "write_back_done",
         "replay_fallback",
+        "tool_budget_rejected",
+        "adk_orchestration",
+        "policy_halted",
+        "writeback_blocked",
         "error",
     ]
     data: Dict[str, Any]

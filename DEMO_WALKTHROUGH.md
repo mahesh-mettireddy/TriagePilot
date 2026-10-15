@@ -59,7 +59,7 @@
 **[Visual: Speaker clicks 'Verify SHA-256 Ledger' to open AuditDrawer, then clicks 'Ablation & Evals' tab]**
 
 **Speaker (Voiceover):**
-> *"Every single step—from raw ticket ingestion to the final human sign-off—is committed to an immutable **SHA-256 Merkle-linked audit ledger**. One click re-verifies the mathematical integrity of the entire chain.*
+> *"Every single step—from raw ticket ingestion to the final human sign-off—is committed to an immutable **SHA-256 hash-chained audit ledger**. One click re-verifies the mathematical integrity of the entire chain.*
 >
 > *In our comparative ablation benchmark over 8 golden scenarios and 15 git commits:*
 > - *Standard single-prompt LLMs achieved only 42% accuracy with a 34% false conclusion rate.*

@@ -9,6 +9,7 @@ Ablation study comparing 3 architectural paradigms:
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any, Dict, List
 
 
@@ -18,6 +19,12 @@ def get_ablation_benchmarks() -> Dict[str, Any]:
     over the 8 Golden Scenarios.
     """
     return {
+        "run_id": "RECORDED-ABLATION-2026-01",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "execution_mode": "recorded_benchmark",
+        "provider": "recorded",
+        "ground_truth_version": "recorded-benchmark-manifest-v1",
+        "provenance": "Recorded benchmark values; use POST /api/eval/run for a fresh run.",
         "modes": [
             {
                 "id": "mode_a",

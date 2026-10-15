@@ -27,6 +27,8 @@ from engine.schemas import (
     Hypothesis,
     SourceType,
 )
+from engine.ai_runtime import get_ai_runtime
+from engine.masking import quarantine_prompt_injection
 
 logger = logging.getLogger(__name__)
 
@@ -46,24 +48,23 @@ and deterministic contradiction flags. Your job:
    the ticket describes.
 3. Propose <= 4 hypotheses. Each must cite verified card_ids as supporting or contradicting.
 
-Return ONLY valid JSON array of objects matching this schema:
-[
-  {
-    "hypothesis_id": "H1",
-    "statement": "<root cause statement>",
-    "culprit_files": ["<file paths>"],
-    "culprit_commit": "<sha or null>",
-    "supporting_card_ids": ["<card_ids>"],
-    "contradicting_card_ids": ["<card_ids>"],
-    "score": <float 0.0-1.0>
-  }
-]
-
-Also, if you detect BEHAVIOUR_MISMATCH or SCOPE_MISMATCH, append a field
-"semantic_contradictions" as a list of objects:
-[
-  {"kind": "BEHAVIOUR_MISMATCH", "card_a": "<doc card_id>", "card_b": "<code card_id>", "note": "<explanation>"}
-]
+Return ONLY valid JSON matching this schema:
+{
+  "hypotheses": [
+    {
+      "hypothesis_id": "H1",
+      "statement": "<root cause statement>",
+      "culprit_files": ["<file paths>"],
+      "culprit_commit": "<sha or null>",
+      "supporting_card_ids": ["<card_ids>"],
+      "contradicting_card_ids": ["<card_ids>"],
+      "score": <float 0.0-1.0>
+    }
+  ],
+  "semantic_contradictions": [
+    {"kind": "BEHAVIOUR_MISMATCH", "card_a": "<doc card_id>", "card_b": "<code card_id>", "note": "<explanation>"}
+  ]
+}
 
 Respond with ONLY the JSON, no markdown fences.
 """
@@ -192,15 +193,12 @@ async def _llm_hypotheses(
     """Use gemini-2.5-pro to generate hypotheses from verified evidence."""
     import asyncio
 
-    api_key = os.environ.get("GOOGLE_API_KEY", "")
-    if not api_key:
+    runtime = get_ai_runtime()
+    if not runtime.status.configured:
         return _fallback_hypotheses(verified_cards, contradictions)
 
     try:
-        from google import genai  # type: ignore[import]
         from google.genai import types  # type: ignore[import]
-
-        client = genai.Client(api_key=api_key)
 
         # Build evidence summary for the prompt
         cards_summary = []
@@ -208,9 +206,15 @@ async def _llm_hypotheses(
             cards_summary.append({
                 "card_id": card.card_id,
                 "source_type": card.source_type.value,
-                "pointer": card.pointer,
-                "snippet": card.snippet[:200],
-                "claim": card.claim,
+                # Evidence is untrusted model input even after deterministic
+                # verification.  Keep the card ID intact for citations while
+                # masking snippets, claims, and pointer values before Gemini.
+                "pointer": {
+                    key: value if key in {"line_start", "line_end"} else quarantine_prompt_injection(str(value), max_chars=200)
+                    for key, value in card.pointer.items()
+                },
+                "snippet": quarantine_prompt_injection(card.snippet[:200], max_chars=200),
+                "claim": quarantine_prompt_injection(card.claim, max_chars=200),
                 "stance": card.stance.value,
             })
 
@@ -225,20 +229,17 @@ async def _llm_hypotheses(
             f"--- DETERMINISTIC CONTRADICTIONS ---\n{json.dumps(contra_summary, indent=2)}\n---"
         )
 
-        loop = asyncio.get_event_loop()
-        response = await loop.run_in_executor(
-            None,
-            lambda: client.models.generate_content(
-                model="gemini-2.5-pro",
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    temperature=0.0,
-                ),
+        raw = await runtime.generate_json(
+            model="gemini-2.5-pro",
+            prompt=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.0,
             ),
+            operation="hypothesis_reconciliation",
         )
-
-        raw = response.text.strip()
+        if raw is None:
+            return _fallback_hypotheses(verified_cards, contradictions)
         raw = re.sub(r"^```(?:json)?\s*", "", raw)
         raw = re.sub(r"\s*```$", "", raw)
         data = json.loads(raw)
@@ -256,14 +257,20 @@ async def _llm_hypotheses(
         else:
             return _fallback_hypotheses(verified_cards, contradictions)
 
+        valid_card_ids = {card.card_id for card in verified_cards}
         for h in hyp_list[:4]:
+            supporting = [card_id for card_id in h.get("supporting_card_ids", []) if card_id in valid_card_ids]
+            contradicting = [card_id for card_id in h.get("contradicting_card_ids", []) if card_id in valid_card_ids]
+            if not supporting:
+                logger.warning("Dropping hypothesis %s: no verified supporting card IDs", h.get("hypothesis_id"))
+                continue
             hypotheses.append(Hypothesis(
                 hypothesis_id=h.get("hypothesis_id", f"H{len(hypotheses)+1}"),
                 statement=h.get("statement", ""),
                 culprit_files=h.get("culprit_files", []),
                 culprit_commit=h.get("culprit_commit"),
-                supporting_card_ids=h.get("supporting_card_ids", []),
-                contradicting_card_ids=h.get("contradicting_card_ids", []),
+                supporting_card_ids=supporting,
+                contradicting_card_ids=contradicting,
                 score=float(h.get("score", 0.5)),
             ))
 
@@ -273,13 +280,22 @@ async def _llm_hypotheses(
                 kind = ContradictionKind(kind_str)
             except ValueError:
                 kind = ContradictionKind.BEHAVIOUR_MISMATCH
+            card_a = sc.get("card_a")
+            card_b = sc.get("card_b")
+            if card_a not in valid_card_ids or card_b not in valid_card_ids:
+                logger.warning("Dropping semantic contradiction with unsupported card references")
+                continue
             semantic_contras.append(Contradiction(
                 kind=kind,
                 deterministic=False,
-                card_a=sc.get("card_a"),
-                card_b=sc.get("card_b"),
+                card_a=card_a,
+                card_b=card_b,
                 note=sc.get("note", ""),
             ))
+
+        if not hypotheses and verified_cards:
+            fallback_hyps, fallback_contras = _fallback_hypotheses(verified_cards, contradictions)
+            return fallback_hyps, semantic_contras or fallback_contras
 
         return hypotheses, semantic_contras
 
@@ -305,7 +321,6 @@ async def generate_hypotheses(
     Returns:
         (hypotheses, semantic_contradictions)
     """
-    api_key = os.environ.get("GOOGLE_API_KEY", "")
-    if api_key:
+    if get_ai_runtime().status.configured:
         return await _llm_hypotheses(verified_cards, contradictions)
     return _fallback_hypotheses(verified_cards, contradictions)

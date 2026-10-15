@@ -58,7 +58,7 @@ EXPOSE 8080
 
 # Health check probe
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:${PORT}/healthz || exit 1
+    CMD curl -f http://localhost:${PORT}/readyz || exit 1
 
 # Start FastAPI application via Uvicorn
 CMD ["sh", "-c", "uvicorn api.main:app --host 0.0.0.0 --port ${PORT}"]
