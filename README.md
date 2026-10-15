@@ -2,13 +2,15 @@
 
 > *"Every conclusion ships with proof, or it doesn't ship."*
 
+[![Live Cloud Run Demo](https://img.shields.io/badge/Live%20Demo-Cloud%20Run%20Active-success?style=for-the-badge&logo=googlecloud)](https://triagepilot-ywgad5nv3a-uc.a.run.app)
 [![Build & Verification Status](https://img.shields.io/badge/Verification-180%2F180%20Tests%20Passing-emerald?style=for-the-badge&logo=pytest)](eval/tests/)
-[![Google Cloud Run](https://img.shields.io/badge/Google%20Cloud-Cloud%20Run%20Ready-4285F4?style=for-the-badge&logo=googlecloud)](Dockerfile)
+[![Google Cloud Run](https://img.shields.io/badge/Google%20Cloud-Cloud%20Run%20Ready-4285F4?style=for-the-badge&logo=googlecloud)](https://triagepilot-ywgad5nv3a-uc.a.run.app)
 [![Gemini 2.0](https://img.shields.io/badge/AI%20Core-Gemini%202.0%20%2B%20ADK-blue?style=for-the-badge&logo=google)](engine/)
-[![Audit Integrity](https://img.shields.io/badge/Audit%20Ledger-SHA--256%20Merkle%20Chain-teal?style=for-the-badge)](audit_chain.json)
+[![Audit Integrity](https://img.shields.io/badge/Audit%20Ledger-SHA--256%20Merkle%20Chain-teal?style=for-the-badge)](https://triagepilot-ywgad5nv3a-uc.a.run.app/api/audit/verify)
 
 **Track:** Future of Work & Enterprise Productivity  
-**Competition:** Google Cloud AI Builder Cup 2026
+**Competition:** Google Cloud AI Builder Cup 2026  
+**Live Cockpit URL:** [https://triagepilot-ywgad5nv3a-uc.a.run.app](https://triagepilot-ywgad5nv3a-uc.a.run.app)
 
 ---
 

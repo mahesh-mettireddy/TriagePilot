@@ -12,7 +12,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 Write-Host "==========================================================" -ForegroundColor Cyan
-Write-Host "  TriagePilot — Google Cloud Run Automated Deployment" -ForegroundColor Cyan
+Write-Host "  TriagePilot -- Google Cloud Run Automated Deployment" -ForegroundColor Cyan
 Write-Host "==========================================================" -ForegroundColor Cyan
 
 # 1. Verify gcloud CLI
@@ -31,20 +31,20 @@ if (-not $ProjectId -or $ProjectId -eq "(unset)") {
     exit 1
 }
 
-Write-Host "[+] Target GCP Project: $ProjectId" -ForegroundColor Green
-Write-Host "[+] Target Region:     $Region" -ForegroundColor Green
-Write-Host "[+] Service Name:      $ServiceName" -ForegroundColor Green
+Write-Host "Target GCP Project: $ProjectId" -ForegroundColor Green
+Write-Host "Target Region:      $Region" -ForegroundColor Green
+Write-Host "Service Name:       $ServiceName" -ForegroundColor Green
 
 $ImageTag = "gcr.io/$ProjectId/${ServiceName}:latest"
 
 # 3. Build & Push Image via Cloud Build
 Write-Host ""
-Write-Host "[*] Submitting container build to Google Cloud Build ($ImageTag)..." -ForegroundColor Yellow
+Write-Host "Submitting container build to Google Cloud Build ($ImageTag)..." -ForegroundColor Yellow
 gcloud builds submit --tag $ImageTag .
 
 # 4. Deploy Container to Cloud Run
 Write-Host ""
-Write-Host "[*] Deploying container image to Cloud Run..." -ForegroundColor Yellow
+Write-Host "Deploying container image to Cloud Run..." -ForegroundColor Yellow
 gcloud run deploy $ServiceName `
     --image $ImageTag `
     --platform managed `
