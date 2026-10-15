@@ -53,7 +53,7 @@ gcloud run deploy $ServiceName `
     --port 8080 `
     --memory 1Gi `
     --cpu 1 `
-    --min-instances 0 `
+    --min-instances 1 `
     --max-instances 5 `
     --timeout 300
 

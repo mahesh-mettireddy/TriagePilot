@@ -4,24 +4,49 @@
 
 [![Live Cloud Run Demo](https://img.shields.io/badge/Live%20Demo-Cloud%20Run%20Active-success?style=for-the-badge&logo=googlecloud)](https://triagepilot-ywgad5nv3a-uc.a.run.app)
 [![Build & Verification Status](https://img.shields.io/badge/Verification-180%2F180%20Tests%20Passing-emerald?style=for-the-badge&logo=pytest)](eval/tests/)
-[![Google Cloud Run](https://img.shields.io/badge/Google%20Cloud-Cloud%20Run%20Ready-4285F4?style=for-the-badge&logo=googlecloud)](https://triagepilot-ywgad5nv3a-uc.a.run.app)
-[![Gemini 2.0](https://img.shields.io/badge/AI%20Core-Gemini%202.0%20%2B%20ADK-blue?style=for-the-badge&logo=google)](engine/)
+[![Google Cloud Run](https://img.shields.io/badge/Google%20Cloud-Cloud%20Run%20Ready%20(Warm%20Instance)-4285F4?style=for-the-badge&logo=googlecloud)](https://triagepilot-ywgad5nv3a-uc.a.run.app)
+[![Gemini 2.5 on Vertex AI](https://img.shields.io/badge/AI%20Core-Gemini%202.5%20Pro%20%26%20Flash%20on%20Vertex%20AI-4285F4?style=for-the-badge&logo=googlecloud)](engine/)
 [![Audit Integrity](https://img.shields.io/badge/Audit%20Ledger-SHA--256%20Merkle%20Chain-teal?style=for-the-badge)](https://triagepilot-ywgad5nv3a-uc.a.run.app/api/audit/verify)
 
 **Track:** Future of Work & Enterprise Productivity  
 **Competition:** Google Cloud AI Builder Cup 2026  
-**Live Cockpit URL:** [https://triagepilot-ywgad5nv3a-uc.a.run.app](https://triagepilot-ywgad5nv3a-uc.a.run.app)
+**Live Cockpit URL:** [https://triagepilot-ywgad5nv3a-uc.a.run.app](https://triagepilot-ywgad5nv3a-uc.a.run.app)  
+**Demo Video Walkthrough:** [`DEMO_WALKTHROUGH.md`](DEMO_WALKTHROUGH.md)
 
 ---
 
 ## 📌 Executive Summary
 
-In enterprise software and financial infrastructure, when incidents strike, engineering teams are paralyzed by the blind **L1 → L2 → L3 escalation waterfall**.
+In enterprise software and financial infrastructure, when incidents strike, engineering teams are paralyzed by the blind **L1 → L2 → L3 escalation waterfall**:
 - **L1 Support** reads ambiguous customer tickets ("transfers failing!") and blindly escalates.
 - **L2 Operations** spends hours querying distributed log clusters and outdated Confluence runbooks.
 - **L3 Developers** are paged to re-diagnose issues from scratch, deciphering cryptic commit blames.
 
 **TriagePilot** eliminates this operational drag. It acts as an autonomous initial analyst that cross-examines client claims against log events, pinned source code ASTs, and runbooks before synthesizing a verified, proof-carrying triage brief.
+
+---
+
+## 🖥️ Live React Cockpit UI Overview
+
+The dark-mode SRE cockpit is designed for high-velocity incident response, deployed as a single-container multi-stage build on **Google Cloud Run**:
+
+```
++-----------------------------------------------------------------------------------------------------------------------+
+|  🧭 TriagePilot v1.0   [Triage Cockpit]   [Ablation & Evals]   [Architecture & Profile]    [🔒 Verify SHA-256 Ledger]  |
++-----------------------------------------------------------------------------------------------------------------------+
+|  COLUMN 1: INGESTION            |  COLUMN 2: ROUTING & PIPELINE STREAM   |  COLUMN 3: VERIFIED BRIEF & MAKER-CHECKER  |
+|  * Scenarios (S01 to S11)       |  * 5 Specialists Router Bar:           |  * Evidentiary Trust Meter:                |
+|    - S01: IST Cutoff Bug        |    [History] [Logs] [Code] [Docs] [DB] |    Score: 0.84 | HIGH BAND | CONCLUDE         |
+|    - S03: Prompt Injection      |    ⚡ PRUNED: RecordAgent (No TXN-ID)   |  * Root Cause Hypothesis:                  |
+|    - S04: Stale Doc Contradict  |  * Real-Time SSE Event Stream:         |    app/transfers/cutoff.py @ commit 85d07f2   |
+|    - S11: Two-Turn Abstain      |    - [PII Redacted: PAN & Aadhaar]     |  * Grounded Citations:                     |
+|  * Raw Ticket Intake            |    - [Injection Deflected: Safe Guard] |    ✔ VERIFIED: cutoff.py:34 (AST Anchor)      |
+|  * Deterministic PII Sanitizer  |    - [BEHAVIOUR_MISMATCH: Stale Doc]   |    ✖ DROPPED: Confluence runbook DOC-SMS-01   |
+|    Tokens: [Aadhaar Redacted]   |  * Maker-Checker Human Approval Gate:  |  * Synthesized Drafts:                     |
+|  * Mode: [REPLAY] / [LIVE]      |    [Approve & Push to Jira]            |    - Safe Customer Reply Draft             |
+|  * [RUN TRIAGEPILOT]            |    [Developer Steer] [Client Reply]    |    - Formatted Jira Bug Ticket Draft       |
++-----------------------------------------------------------------------------------------------------------------------+
+```
 
 ---
 
@@ -52,17 +77,17 @@ flowchart TD
     end
 
     subgraph HumanGate ["4. MAKER-CHECKER GATE & WRITE-BACK"]
-        TRUST --> POLICY{"Policy Engine<br/>Trust >= 0.75: CONCLUDE<br/>Trust < 0.45: ABSTAIN"}
+        TRUST --> POLICY{"Policy Engine<br/>Trust >= 0.70: CONCLUDE<br/>Trust < 0.45: ABSTAIN"}
         POLICY --> DRAFT["Synthesized Triage Brief & Drafts"]
         DRAFT --> GATE["Maker-Checker Human Approval Gate<br/>(Mandatory SRE Sign-off)"]
         GATE --> JIRA["JiraPort / Write Mutation<br/>(Deterministic Write-Back Reference)"]
     end
 
     subgraph AuditLog ["5. CRYPTOGRAPHIC PROVABILITY"]
-        INGESTION -.-> AUDIT["SHA-256 Merkle-Linked Immutable Audit Ledger"]
-        CORE -.-> AUDIT
-        VERIFIERENGINE -.-> AUDIT
-        HUMANGATE -.-> AUDIT
+        Ingestion -.-> AUDIT["SHA-256 Merkle-Linked Immutable Audit Ledger"]
+        Core -.-> AUDIT
+        VerifierEngine -.-> AUDIT
+        HumanGate -.-> AUDIT
     end
 ```
 
@@ -88,9 +113,21 @@ Blasting every specialist agent on every ticket is wasteful and slow. TriagePilo
 - **Result:** **~55% reduction in token consumption and API latency.**
 
 ### 4. 📐 Mathematical Trust Score & Principled Abstention (`trust.py`)
-Instead of opaque confidence heuristics, TriagePilot evaluates:
-$$\text{Trust} = c_{\text{ver}} + c_{\text{div}} + c_{\text{spec}} + c_{\text{time}} - p_{\text{contra}} - p_{\text{unver}}$$
-When $\text{Trust} < 0.45$ (e.g. Scenario S11), the engine executes **Principled Abstention** (`POLICY: ABSTAIN`), generating targeted diagnostic questions rather than a dangerous false conclusion.
+Instead of opaque confidence heuristics, TriagePilot calculates an empirical trust score:
+
+$$\text{Trust} = \text{clamp}\Big(c_{\text{ver}} + c_{\text{div}} + c_{\text{spec}} + c_{\text{time}} - p_{\text{contra}} - p_{\text{unver}},\, 0.0,\, 1.0\Big)$$
+
+#### Formula Component Breakdown & Weights:
+- **$c_{\text{ver}}$ (Verified Evidence Ratio, max $+0.35$):** Evaluates $\frac{|\text{verified citations}|}{|\text{total citations}|}$. Directly rewards grounded AST line anchors and real log event matches.
+- **$c_{\text{div}}$ (Cross-Port Source Diversity, max $+0.25$):** Evaluates coverage across independent read ports ($\ge 3$ distinct source types among Git, Logs, Database, and Docs).
+- **$c_{\text{spec}} + c_{\text{time}}$ (Specificity & Temporal Alignment, max $+0.40$):**
+  - **$c_{\text{spec}}$ ($+0.20$):** AST line-anchor specificity (exact file path, function symbol, and commit SHA).
+  - **$c_{\text{time}}$ ($+0.20$):** Timestamp alignment between client incident observation and telemetry log burst ($|\Delta t| \le 15\text{m}$).
+- **$p_{\text{contra}} + p_{\text{unver}}$ (Deterministic & Hallucination Penalties):**
+  - **$p_{\text{contra}}$ ($-0.30$ per contradiction):** Heavy penalty for `TIME_MISMATCH`, `BEHAVIOUR_MISMATCH`, or `STATE_MISMATCH`.
+  - **$p_{\text{unver}}$ ($-0.20$ per dropped citation):** Strict penalty for ungrounded citations or hallucinations caught by `verifier.py`.
+- **Decision Bands:** `HIGH >= 0.70` (`POLICY: CONCLUDE`), `MEDIUM 0.45-0.70` (`POLICY: CONCLUDE_WITH_CAVEAT`), `LOW < 0.45` (`POLICY: ABSTAIN`).
+- **Principled Abstention:** Whenever $\text{Trust} < 0.45$ (or hypothesis score gap $< 0.10$), TriagePilot automatically abstains and generates targeted diagnostic questions rather than fabricating a false conclusion.
 
 ### 5. 🧑‍✈️ Maker-Checker Human Approval Gate
 Zero automated write-backs occur without human oversight. The SRE reviews the verified brief, optionally edits the client reply, and signs off before mutations push to Jira.
@@ -132,20 +169,65 @@ Tested across all **8 Golden Scenarios** and **15 Git Commits** in `transfers-de
 
 ---
 
+## 🔬 Under the Hood: Scenario S04 Walkthrough (The Stale Runbook Trap)
+
+Judges frequently ask: *How does TriagePilot handle contradictory documentation in the real world?*
+
+Here is the exact autonomous lifecycle when evaluating **Scenario S04**:
+
+```
+[1. INGESTION]
+  • Customer Ticket TCK-4004:
+    "Beneficiary SMS was not delivered for transfer TXN-4015 from account [REDACTED] to [REDACTED].
+     Vendor claims they never received confirmation. Your SLA promises automated delivery with retries."
+  • Presidio Sanitizer: Redacts 12-digit account numbers and phone tokens.
+
+[2. CONCURRENT SPECIALIST SWARM]
+  • KnowledgeAgent (DocPort):
+    Cites Confluence Runbook DOC-SMS-01: "SMS notifications retry automatically 3 times with exponential backoff."
+  • CodeAgent (GitPort):
+    Inspects app/notifications/sms.py and discovers commit a8f3b12 ("Refactor notification service"):
+    The retry loop was deleted 2 days ago! Code currently executes a single fire-and-forget attempt.
+  • LogsAgent (LogPort):
+    Finds log line log-4015: "SMS gateway returned 503 Service Unavailable" at 15:40:02 UTC.
+    Zero subsequent retry events exist in telemetry.
+
+[3. DETERMINISTIC VERIFIER & RECONCILER]
+  • reconcile.py detects BEHAVIOUR_MISMATCH:
+    Documented SLA behavior (automatic retries) directly contradicts executable Python AST (single attempt).
+  • Priority Rule: Executable source code overrides human-authored documentation.
+  • Verifier Action: Automatically drops the Confluence claim as invalid (Dropped Claims: 1).
+  • Knowledge Gap Trigger: Emits KBGap(page_id="DOC-SMS-01", issue="Stale retry policy - code removed loop in a8f3b12").
+
+[4. SYNTHESIZED TRIAGE BRIEF & MAKER-CHECKER GATE]
+  • Root Cause: Missing retry loop in app/notifications/sms.py:42 introduced in commit a8f3b12.
+  • Trust Score: 0.82 (HIGH BAND) -> POLICY: CONCLUDE.
+  • SRE Action: Engineer Alex Rivera clicks "Approve & Push to Jira" -> Files TRIAGE-5225 with exact Git blame line permalink!
+```
+
+---
+
 ## 💻 Tech Stack & Google Cloud Services
 
-- **Compute & Deployment:** Google Cloud Run (Containerized, auto-scaling, port 8080)
-- **AI Core:** Gemini 2.0 Flash / Pro via Google GenAI SDK & Agent Development Kit (ADK)
-- **PII Scrubbing:** Microsoft Presidio Analyzer & Anonymizer + Deterministic Regex Engine
-- **Backend API:** FastAPI, Uvicorn, SlowAPI Rate Limiting, SSE Starlette
-- **Frontend Cockpit:** React 18, TypeScript, Vite, Tailwind CSS, Lucide Icons
-- **Observability:** Pluggable GitPort, LogPort, DocPort, RecordPort
+- **Compute & Serverless Hosting:** **Google Cloud Run** (Multi-stage container, port 8080, `--min-instances 1` for zero cold-start latency).
+- **AI Core & Multi-Agent Swarm:** **Gemini 2.5 Flash** (for zero-shot intake routing and high-throughput specialist subagents) & **Gemini 2.5 Pro** (for deep semantic hypothesis ranking and contradiction resolution) via **Google Cloud Vertex AI** & **Google Agent Development Kit (ADK)**.
+- **PII Scrubbing:** Microsoft Presidio Analyzer & Anonymizer + Deterministic Regex Engine.
+- **Backend API:** FastAPI, Uvicorn, SlowAPI Rate Limiting, SSE Starlette.
+- **Frontend Cockpit:** React 18, TypeScript, Vite, Tailwind CSS, Lucide Icons.
+- **Observability Ports:** Pluggable `GitPort`, `LogPort`, `DocPort`, `RecordPort`.
 
 ---
 
 ## 🚀 Quickstart: Running TriagePilot
 
-### Option 1: One-Click Docker Compose (Recommended)
+### Option 1: Live Cloud Run Deployment (Instant Access)
+Open the deployed production URL:
+**[https://triagepilot-ywgad5nv3a-uc.a.run.app](https://triagepilot-ywgad5nv3a-uc.a.run.app)**  
+*(Instance is pre-warmed with `--min-instances 1` for instant `<150ms` response times).*
+
+---
+
+### Option 2: One-Click Docker Compose
 ```bash
 docker compose up --build
 ```
@@ -153,7 +235,7 @@ Navigate to **`http://localhost:8080/`** in your browser.
 
 ---
 
-### Option 2: Local Python + Vite Development
+### Option 3: Local Python + Vite Development
 ```bash
 # 1. Install Python dependencies
 pip install -r requirements.txt
@@ -175,9 +257,9 @@ Or use the convenience scripts:
 
 ---
 
-### Option 3: Deploy to Google Cloud Run
+### Option 4: Deploy to Google Cloud Run
 ```powershell
-# Windows PowerShell
+# Windows PowerShell (Deploys with --min-instances 1 for instant response)
 .\scripts\deploy_cloudrun.ps1 -ProjectId your-gcp-project-id -Region us-central1
 
 # Linux / macOS
@@ -205,4 +287,5 @@ python scripts/run_eval.py
 
 - **Google Cloud AI Builder Cup 2026**
 - **Repository:** [`mahesh-mettireddy/TriagePilot`](https://github.com/mahesh-mettireddy/TriagePilot)
+- **Live Deployed Application:** [https://triagepilot-ywgad5nv3a-uc.a.run.app](https://triagepilot-ywgad5nv3a-uc.a.run.app)
 - **Walkthrough Script:** [`DEMO_WALKTHROUGH.md`](DEMO_WALKTHROUGH.md)
