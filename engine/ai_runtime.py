@@ -207,6 +207,90 @@ class AIRuntime:
             )
             return None
 
+    async def generate_multimodal_json(
+        self,
+        *,
+        model: str,
+        prompt: str,
+        image_bytes: bytes,
+        mime_type: str = "image/png",
+        config: Any,
+        operation: str,
+    ) -> str | None:
+        bounded_prompt = prompt[: int(os.getenv("TRIAGEPILOT_MAX_MODEL_INPUT_CHARS", "12000"))]
+        client = self.client()
+        if client is None or not image_bytes:
+            self.calls.append({
+                "operation": operation,
+                "model": model,
+                "provider": self._status.provider,
+                "mode": "fallback",
+                "latency_ms": 0,
+                "outcome": "fallback",
+                "fallback_reason": self._status.fallback_reason or "No image bytes or unconfigured client",
+            })
+            increment_metric("model_fallbacks")
+            return None
+
+        loop = asyncio.get_running_loop()
+
+        def call() -> Any:
+            from google.genai import types  # type: ignore[import]
+
+            image_part = types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
+            return client.models.generate_content(
+                model=model,
+                contents=[image_part, bounded_prompt],
+                config=config,
+            )
+
+        try:
+            started = time.perf_counter()
+            response = await asyncio.wait_for(
+                loop.run_in_executor(None, call),
+                timeout=float(os.getenv("TRIAGEPILOT_MODEL_TIMEOUT_SECONDS", "25")),
+            )
+            latency_ms = int((time.perf_counter() - started) * 1000)
+            text = getattr(response, "text", None)
+            if not isinstance(text, str) or not text.strip():
+                raise ValueError("Model returned an empty multimodal response")
+            self.calls.append({
+                "operation": operation,
+                "model": model,
+                "provider": self._status.provider,
+                "mode": self._status.mode,
+                "latency_ms": latency_ms,
+                "outcome": "success",
+            })
+            increment_metric("model_calls")
+            increment_metric("model_latency_ms", latency_ms)
+            emit_log(
+                logger,
+                "Google AI multimodal model call completed",
+                operation=operation,
+                provider=self._status.provider,
+                model=model,
+                latency_ms=latency_ms,
+                outcome="success",
+            )
+            return text.strip()
+        except Exception as exc:
+            raw_err = str(exc).strip() or type(exc).__name__
+            safe_error = re.sub(r"(?i)(token|key|secret|password)\s*[=:]\s*\S+", r"\1=[REDACTED]", raw_err)[:500]
+            logger.error("Google AI multimodal operation %s failed: %s", operation, safe_error)
+            self.calls.append({
+                "operation": operation,
+                "model": model,
+                "provider": self._status.provider,
+                "mode": "fallback",
+                "latency_ms": 0,
+                "outcome": "fallback",
+                "error": safe_error,
+                "fallback_reason": f"{operation} failed: {safe_error}",
+            })
+            increment_metric("model_fallbacks")
+            return None
+
 
 _runtime = AIRuntime()
 

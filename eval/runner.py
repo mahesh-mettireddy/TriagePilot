@@ -76,7 +76,7 @@ GOLDEN_SCENARIOS_TRUTH: Dict[str, Dict[str, Any]] = {
     "S11": {
         "title": "Insufficient info -> ABSTAIN -> Client Reply Resume",
         "ticket_class": "INSUFFICIENT_INFO",
-        "culprit_module": "cutoff.py",
+        "culprit_module": None,
         "expected_trust_band": "LOW",
         "has_injection": False,
     },

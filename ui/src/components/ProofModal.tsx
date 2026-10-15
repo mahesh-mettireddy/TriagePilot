@@ -100,6 +100,22 @@ export const ProofModal: React.FC<ProofModalProps> = ({ card, onClose }) => {
             </div>
           </div>
 
+          {/* Visual Screenshot Preview (for multimodal visual evidence cards) */}
+          {(card.source_type === 'visual' || card.pointer?.image_url) && (
+            <div>
+              <span className="text-xs font-semibold uppercase tracking-wider text-teal-400 block mb-1.5">
+                Multimodal Visual Evidence Attachment (Gemini 2.5 Flash Vision OCR)
+              </span>
+              <div className="bg-slate-950 p-3 rounded-lg border border-teal-500/30 overflow-hidden">
+                <img
+                  src={card.pointer?.image_url || `/api/bundles/S06/attachments/${card.pointer?.filename || 'screenshot.png'}`}
+                  alt="Customer attached error screenshot"
+                  className="w-full max-h-64 object-contain rounded border border-slate-800"
+                />
+              </div>
+            </div>
+          )}
+
           {/* Code/Log Snippet */}
           <div>
             <div className="flex items-center justify-between mb-1.5">

@@ -103,6 +103,8 @@ class HistoryAgent:
         counter: list[int] = [0]
         cards: list[EvidenceCard] = []
         text = ticket.masked_text or ticket.text
+        if ticket.human_context and ticket.human_context.message:
+            text = f"{text}\n{ticket.human_context.message}"
 
         await _emit(queue, _make_event(seq, "tool_started", {
             "agent": "HistoryAgent", "tool": "similar_tickets"
@@ -132,33 +134,40 @@ class HistoryAgent:
         await _emit(queue, _make_event(seq, "tool_finished", {
             "agent": "HistoryAgent", "tool": "similar_tickets", "cards": len(cards)
         }))
-        await _emit(queue, _make_event(seq, "tool_started", {
-            "agent": "HistoryAgent", "tool": "known_errors"
-        }))
 
-        # 2. Known errors
-        try:
-            known = await asyncio.get_event_loop().run_in_executor(
-                None, lambda: self._port.known_errors(text)
-            )
-            for ke in known[:2]:
-                card = _pending_card(
-                    card_id=_card_id(self.PREFIX, counter),
-                    specialist="HistoryAgent",
-                    source_type=SourceType.TICKET,
-                    pointer={"system": "KnowledgeBase", "id": ke.get("ke_id", "?"), "field": "workaround"},
-                    snippet=(ke.get("workaround") or ke.get("symptoms", ""))[:400],
-                    claim=f"Known Error {ke.get('ke_id')}: {ke.get('title', '')}",
-                    stance=Stance.CONTEXT,
+        # 2. Known errors (queried when ticket class is KNOWN_ERROR or mentions holiday/settlement/batch/KE)
+        text_lower = text.lower()
+        should_check_ke = (
+            plan.ticket_class.value == "KNOWN_ERROR"
+            or any(k in text_lower for k in ("holiday", "settlement", "batch", "ke-", "known error"))
+        )
+        if should_check_ke:
+            await _emit(queue, _make_event(seq, "tool_started", {
+                "agent": "HistoryAgent", "tool": "known_errors"
+            }))
+            try:
+                known = await asyncio.get_event_loop().run_in_executor(
+                    None, lambda: self._port.known_errors(text)
                 )
-                cards.append(card)
-                await _emit(queue, _make_event(seq, "card_added", {"card_id": card.card_id, "agent": "HistoryAgent"}))
-        except Exception as exc:
-            logger.warning("HistoryAgent.known_errors failed: %s", exc)
+                for ke in known[:2]:
+                    card = _pending_card(
+                        card_id=_card_id(self.PREFIX, counter),
+                        specialist="HistoryAgent",
+                        source_type=SourceType.TICKET,
+                        pointer={"system": "KnowledgeBase", "id": ke.get("ke_id", "?"), "field": "workaround"},
+                        snippet=(ke.get("workaround") or ke.get("symptoms", ""))[:400],
+                        claim=f"Known Error {ke.get('ke_id')}: {ke.get('title', '')}",
+                        stance=Stance.CONTEXT,
+                    )
+                    cards.append(card)
+                    await _emit(queue, _make_event(seq, "card_added", {"card_id": card.card_id, "agent": "HistoryAgent"}))
+            except Exception as exc:
+                logger.warning("HistoryAgent.known_errors failed: %s", exc)
 
-        await _emit(queue, _make_event(seq, "tool_finished", {
-            "agent": "HistoryAgent", "tool": "known_errors", "cards": len(cards)
-        }))
+            await _emit(queue, _make_event(seq, "tool_finished", {
+                "agent": "HistoryAgent", "tool": "known_errors", "cards": len(cards)
+            }))
+
         await _emit(queue, _make_event(seq, "tool_started", {
             "agent": "HistoryAgent", "tool": "recent_changes"
         }))
@@ -219,6 +228,8 @@ class KnowledgeAgent:
         counter: list[int] = [0]
         cards: list[EvidenceCard] = []
         text = ticket.masked_text or ticket.text
+        if ticket.human_context and ticket.human_context.message:
+            text = f"{text}\n{ticket.human_context.message}"
 
         await _emit(queue, _make_event(seq, "tool_started", {
             "agent": "KnowledgeAgent", "tool": "search_docs"
@@ -226,7 +237,7 @@ class KnowledgeAgent:
 
         try:
             docs = await asyncio.get_event_loop().run_in_executor(
-                None, lambda: self._port.search_docs(text, limit=4)
+                None, lambda: self._port.search_docs(text, limit=1)
             )
             for doc in docs:
                 # Fetch the first section for the snippet
@@ -440,6 +451,8 @@ class CodeAgent:
         counter: list[int] = [0]
         cards: list[EvidenceCard] = []
         text = ticket.masked_text or ticket.text
+        if ticket.human_context and ticket.human_context.message:
+            text = f"{text}\n{ticket.human_context.message}"
         entities = plan.extracted_entities
 
         # Build search query from modules hint or ticket text
@@ -483,7 +496,7 @@ class CodeAgent:
             "agent": "CodeAgent", "tool": "search_code", "cards": len(cards)
         }))
 
-        # 2. Git log for the suspected file (if found)
+        # 2. Git log for the suspected file (if found) — enrich cards with commit timestamp
         if cards:
             suspected_path = cards[0].pointer.get("path", "")
             if suspected_path:
@@ -494,28 +507,16 @@ class CodeAgent:
                     commits = await asyncio.get_event_loop().run_in_executor(
                         None, lambda: self._port.git_log(suspected_path, n=5)
                     )
-                    for commit in commits[:3]:
-                        card = _pending_card(
-                            card_id=_card_id(self.PREFIX, counter),
-                            specialist="CodeAgent",
-                            source_type=SourceType.CODE,
-                            pointer={
-                                "repo": "clientrepo",
-                                "path": suspected_path,
-                                "line_start": 1,
-                                "line_end": 1,
-                                "sha": commit.get("sha", ""),
-                            },
-                            snippet=(
-                                f"commit {commit.get('sha','')[:12]} by {commit.get('author','')} "
-                                f"on {commit.get('date','')}: {commit.get('message','')}"
-                            )[:400],
-                            claim=f"Commit {commit.get('sha','')[:12]}: {commit.get('message','')[:80]}",
-                            stance=Stance.CONTEXT,
-                            observed_at=commit.get("date"),
-                        )
-                        cards.append(card)
-                        await _emit(queue, _make_event(seq, "card_added", {"card_id": card.card_id, "agent": "CodeAgent"}))
+                    if commits:
+                        latest = commits[0]
+                        commit_date = latest.get("date")
+                        commit_sha = latest.get("sha", "")
+                        for c in cards:
+                            if c.pointer.get("path") == suspected_path:
+                                if commit_date and not c.observed_at:
+                                    c.observed_at = commit_date
+                                if commit_sha and not commit_sha.startswith("stub"):
+                                    c.pointer["commit_sha"] = commit_sha
                 except Exception as exc:
                     logger.warning("CodeAgent.git_log failed: %s", exc)
 
@@ -529,16 +530,23 @@ class CodeAgent:
     def _extract_code_hint(text: str) -> str:
         """Extract a code-relevant search term from ticket text."""
         import re
-        # Look for .py file mentions
+        lower = text.lower()
+        # Look for .py file mentions first
         py_files = re.findall(r"\b\w+\.py\b", text)
         if py_files:
             return py_files[0]
-        # Look for error keywords
-        for kw in ["cutoff", "transfer", "fee", "calculator", "sms", "notification",
-                   "idempotency", "limit", "daily"]:
-            if kw in text.lower():
-                return kw
-        return "transfer"
+        # Domain-specific keywords before generic "transfer"
+        keyword_map = [
+            (["cutoff", "same-day", "same_day", "4 pm", "4:15 pm"], "cutoff.py"),
+            (["fee", "calculator", "rounding", "overbilled", "paisa"], "calculator.py"),
+            (["sms", "notification"], "sms.py"),
+            (["idempotency", "charged twice", "duplicate", "clicking transfer quickly"], "idempotency.py"),
+            (["daily limit", "daily_limit", "1,00,000", "100000", "limit exceeded", "limit"], "daily_limit.py"),
+        ]
+        for triggers, hint in keyword_map:
+            if any(t in lower for t in triggers):
+                return hint
+        return "cutoff"
 
 
 # ---------------------------------------------------------------------------
@@ -565,9 +573,12 @@ class RecordAgent:
         scenario_id = ticket.scenario_id or "S01"
         txn_ids = plan.extracted_entities.get("transaction_ids", [])
 
-        # Also look for TXN IDs in ticket text
+        # Also look for TXN IDs in ticket text + human_context
         import re
-        text_txns = re.findall(r"TXN-\d+", ticket.masked_text or ticket.text, re.IGNORECASE)
+        combined_text = ticket.masked_text or ticket.text
+        if ticket.human_context and ticket.human_context.message:
+            combined_text = f"{combined_text}\n{ticket.human_context.message}"
+        text_txns = re.findall(r"TXN-\d+", combined_text, re.IGNORECASE)
         all_txn_ids = list(dict.fromkeys(txn_ids + text_txns))
 
         if not all_txn_ids:

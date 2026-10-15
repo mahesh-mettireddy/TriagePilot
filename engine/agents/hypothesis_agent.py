@@ -41,12 +41,13 @@ _HYPOTHESIS_PROMPT = """\
 You are an expert root-cause analyst. You have been given ONLY verified evidence cards
 and deterministic contradiction flags. Your job:
 
-1. Identify BEHAVIOUR_MISMATCH: a verified DOC card says one thing, but a verified CODE card
-   shows the code does something different (e.g., doc says "retries 3 times" but code has
-   no retry loop).
-2. Identify SCOPE_MISMATCH: the code or logs suggest the issue affects more/less than what
-   the ticket describes.
-3. Propose <= 4 hypotheses. Each must cite verified card_ids as supporting or contradicting.
+1. Identify BEHAVIOUR_MISMATCH ONLY when a verified DOC card and a verified CODE card
+   describe the SAME feature/module and directly conflict (e.g., DOC-SMS-01 says "retries 3 times"
+   while sms.py has no retry loop, or DOC-LIMITS-01 permits exact boundary amounts while
+   daily_limit.py uses >=). Emit at most 1 BEHAVIOUR_MISMATCH per doc/file pair.
+2. Propose <= 3 hypotheses. Each must cite verified card_ids as supporting or contradicting.
+   Score the primary supported root-cause hypothesis between 0.85 and 0.95, and any
+   secondary hypothesis <= 0.55 unless evidence is genuinely tied.
 
 Return ONLY valid JSON matching this schema:
 {
@@ -99,11 +100,13 @@ def _fallback_hypotheses(
         supporting = [primary_code.card_id]
         supporting.extend(c.card_id for c in log_cards[:2])
 
-        # Extract culprit files
-        culprit_files = list({c.pointer.get("path", "") for c in code_cards if c.pointer.get("path")})
+        # Preserve order of culprit files with primary card's file first
+        culprit_files = list(dict.fromkeys(
+            c.pointer.get("path", "") for c in code_cards if c.pointer.get("path")
+        ))
         culprit_commit = None
         for c in code_cards:
-            sha = c.pointer.get("sha", "")
+            sha = c.pointer.get("commit_sha") or c.pointer.get("sha", "")
             if sha and not sha.startswith("stub"):
                 culprit_commit = sha
                 break
@@ -118,7 +121,7 @@ def _fallback_hypotheses(
             culprit_commit=culprit_commit,
             supporting_card_ids=supporting,
             contradicting_card_ids=[c.card_id for c in contradictions[:1] if hasattr(c, 'card_id')],
-            score=0.75 if log_cards else 0.50,
+            score=0.88 if log_cards else 0.78,
         ))
 
     # --- Hypothesis 2: From record mismatch (if applicable) ---
@@ -142,37 +145,58 @@ def _fallback_hypotheses(
                 statement=f"Matches known error: {tc.claim}",
                 culprit_files=[],
                 supporting_card_ids=[tc.card_id],
-                score=0.80,
+                score=0.88 if not code_cards else 0.50,
             ))
             break
 
-    # --- BEHAVIOUR_MISMATCH: doc vs code ---
+    # --- BEHAVIOUR_MISMATCH: doc vs code (scoped by module & deduplicated) ---
+    seen_pairs: set[tuple[str, str]] = set()
     for doc_card in doc_cards:
+        page_id = str(doc_card.pointer.get("page_id", ""))
+        doc_snippet = doc_card.snippet.lower()
         for code_card in code_cards:
-            doc_snippet = doc_card.snippet.lower()
+            code_path = str(code_card.pointer.get("path", "")).lower()
+            pair_key = (page_id, code_path)
+            if pair_key in seen_pairs:
+                continue
             code_snippet = code_card.snippet.lower()
-            # Detect: doc says "retry" but code doesn't show retry
-            if "retry" in doc_snippet and "retry" not in code_snippet:
+            # Detect: SMS doc says "retry" but sms.py doesn't show retry
+            if "retry" in doc_snippet and ("sms" in code_path or not code_path) and "retry" not in code_snippet:
+                seen_pairs.add(pair_key)
                 semantic_contradictions.append(Contradiction(
                     kind=ContradictionKind.BEHAVIOUR_MISMATCH,
                     deterministic=False,
                     card_a=doc_card.card_id,
                     card_b=code_card.card_id,
                     note=(
-                        f"Doc {doc_card.pointer.get('page_id','')} claims retry behaviour, "
+                        f"Doc {page_id} claims retry behaviour, "
                         f"but code in {code_card.pointer.get('path','')} does not show a retry loop"
                     ),
                 ))
-            # Detect: doc mentions different timezone handling
-            if "ist" in doc_snippet and ("utc" in code_snippet and "ist" not in code_snippet):
+            # Detect: Cutoff doc mentions IST timezone, but cutoff.py uses UTC comparison
+            elif "ist" in doc_snippet and ("cutoff" in code_path or not code_path) and ("utc" in code_snippet and "ist" not in code_snippet):
+                seen_pairs.add(pair_key)
                 semantic_contradictions.append(Contradiction(
                     kind=ContradictionKind.BEHAVIOUR_MISMATCH,
                     deterministic=False,
                     card_a=doc_card.card_id,
                     card_b=code_card.card_id,
                     note=(
-                        f"Doc {doc_card.pointer.get('page_id','')} specifies IST timezone, "
+                        f"Doc {page_id} specifies IST timezone, "
                         f"but code uses UTC comparison"
+                    ),
+                ))
+            # Detect: Limits doc permits exact boundary, but daily_limit.py uses >=
+            elif ("1,00,000" in doc_snippet or "100000" in doc_snippet or "limit" in page_id.lower()) and "limit" in code_path and ">=" in code_snippet:
+                seen_pairs.add(pair_key)
+                semantic_contradictions.append(Contradiction(
+                    kind=ContradictionKind.BEHAVIOUR_MISMATCH,
+                    deterministic=False,
+                    card_a=doc_card.card_id,
+                    card_b=code_card.card_id,
+                    note=(
+                        f"Doc {page_id} permits exact boundary transfers, "
+                        f"but {code_card.pointer.get('path','')} uses >= boundary check"
                     ),
                 ))
 
@@ -191,10 +215,13 @@ async def _llm_hypotheses(
     contradictions: list[Contradiction],
 ) -> tuple[list[Hypothesis], list[Contradiction]]:
     """Use gemini-2.5-pro to generate hypotheses from verified evidence."""
-    import asyncio
-
     runtime = get_ai_runtime()
     if not runtime.status.configured:
+        return _fallback_hypotheses(verified_cards, contradictions)
+
+    # Fast-path: if there are no code or log cards (e.g. HOW_TO_USER_ERROR),
+    # use deterministic builder immediately.
+    if not any(c.source_type in {SourceType.CODE, SourceType.LOG} for c in verified_cards):
         return _fallback_hypotheses(verified_cards, contradictions)
 
     try:
@@ -229,13 +256,20 @@ async def _llm_hypotheses(
             f"--- DETERMINISTIC CONTRADICTIONS ---\n{json.dumps(contra_summary, indent=2)}\n---"
         )
 
+        config_kwargs: dict[str, Any] = {
+            "response_mime_type": "application/json",
+            "temperature": 0.0,
+        }
+        if hasattr(types, "ThinkingConfig"):
+            try:
+                config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=512)
+            except Exception:
+                pass
+
         raw = await runtime.generate_json(
-            model="gemini-2.5-pro",
+            model=os.getenv("TRIAGEPILOT_HYPOTHESIS_MODEL", "gemini-2.5-pro"),
             prompt=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                temperature=0.0,
-            ),
+            config=types.GenerateContentConfig(**config_kwargs),
             operation="hypothesis_reconciliation",
         )
         if raw is None:

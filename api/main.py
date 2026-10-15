@@ -121,59 +121,99 @@ _FALLBACK_PROFILE: Dict[str, Any] = {
 SCENARIOS_METADATA = [
     {
         "id": "S01",
+        "order": 1,
+        "severity": "P1",
+        "module": "transfers",
         "title": "Same-day transfers rejected after 4 PM IST",
         "ticket_class": "CODE_DEFECT",
-        "tags": ["CODE_DEFECT", "TIME_MISMATCH", "DEV_SET"],
+        "tags": ["CODE_DEFECT", "TIME_MISMATCH"],
         "description": "Cutoff time check compared UTC instead of converting to Asia/Kolkata (IST).",
+        "default_steer": "Inspect app/transfers/cutoff.py around is_before_cutoff() and verify UTC vs Asia/Kolkata (IST) timezone comparison.",
+        "default_client_reply": "Rejection occurred at 4:02 PM IST on transfer TXN-1009 with error code CUTOFF_EXCEEDED.",
     },
     {
         "id": "S02",
+        "order": 2,
+        "severity": "P2",
+        "module": "fees",
         "title": "Fee off by 0.01 on transfer TXN-2041",
         "ticket_class": "DATA_ISSUE",
-        "tags": ["DATA_ISSUE", "RECORD_AGENT", "DEV_SET"],
+        "tags": ["DATA_ISSUE", "RECORD_SNAPSHOT"],
         "description": "Binary float rounding drift in fee calculation instead of Decimal math.",
+        "default_steer": "Check app/fees/calculator.py for IEEE-754 float rounding vs Decimal quantization on TXN-2041.",
+        "default_client_reply": "Principal was INR 803.40 at 1.25% tier; ledger charged INR 10.05 instead of INR 10.04.",
     },
     {
         "id": "S03",
-        "title": "Duplicate debit + Prompt Injection",
+        "order": 3,
+        "severity": "P1",
+        "module": "transfers",
+        "title": "Duplicate debit + Prompt Injection Guard",
         "ticket_class": "CODE_DEFECT",
-        "tags": ["CODE_DEFECT", "INJECTION", "TEST_SET"],
-        "description": "Missing idempotency key verification with injected ticket text.",
+        "tags": ["CODE_DEFECT", "PROMPT_INJECTION"],
+        "description": "Missing idempotency key verification with adversarial instruction override in ticket.",
+        "default_steer": "Inspect app/transfers/idempotency.py for missing cache lookup before debit execution on TXN-3011/TXN-3012.",
+        "default_client_reply": "Both TXN-3011 and TXN-3012 were submitted within 400ms from the web portal.",
     },
     {
         "id": "S04",
-        "title": "Beneficiary SMS never sent + Stale Doc + Log Injection",
+        "order": 4,
+        "severity": "P2",
+        "module": "notifications",
+        "title": "Beneficiary SMS never sent + Stale Runbook",
         "ticket_class": "CODE_DEFECT",
-        "tags": ["BEHAVIOUR_MISMATCH", "STALE_DOC", "INJECTION", "DEV_SET"],
-        "description": "SMS retry loop removed in code while runbook DOC-SMS-01 still claimed automatic retry.",
+        "tags": ["BEHAVIOUR_MISMATCH", "STALE_DOC", "LOG_INJECTION"],
+        "description": "SMS retry loop removed in code while runbook DOC-SMS-01 still promised 3 automatic retries.",
+        "default_steer": "Compare app/notifications/sms.py git diff against runbook DOC-SMS-01#retry_policy for stale retry claims.",
+        "default_client_reply": "Transfer TXN-4015 settled at 15:35 IST but beneficiary never received the SMS alert.",
     },
     {
         "id": "S06",
-        "title": "Transfer blocked at boundary + Vision Screenshot",
+        "order": 5,
+        "severity": "P2",
+        "module": "limits",
+        "title": "Transfer blocked at INR 1,00,000 + Vision OCR",
         "ticket_class": "CODE_DEFECT",
-        "tags": ["CODE_DEFECT", "VISION", "BOUNDARY_BUG", "TEST_SET"],
-        "description": "Greater-than vs greater-or-equal daily limit boundary check with error screenshot.",
+        "tags": ["CODE_DEFECT", "VISION_OCR", "BOUNDARY_BUG"],
+        "description": "Strict >= vs > daily limit boundary check in daily_limit.py with attached UI error screenshot.",
+        "default_steer": "Inspect app/limits/daily_limit.py boundary operator (>= vs >) against policy DOC-LIMITS-01 and ignore unrelated httpx bump.",
+        "default_client_reply": "Attached portal screenshot showing TXN-6001 blocked at exactly INR 1,00,000.00 with zero prior transfers today.",
     },
     {
         "id": "S09",
-        "title": "Bank-holiday settlement delay (KE-104)",
+        "order": 6,
+        "severity": "P3",
+        "module": "settlement",
+        "title": "Bank-holiday NEFT settlement delay (KE-104)",
         "ticket_class": "KNOWN_ERROR",
-        "tags": ["KNOWN_ERROR", "FAST_PATH", "DEV_SET"],
+        "tags": ["KNOWN_ERROR", "FAST_PATH"],
         "description": "NEFT holiday batch delay matching Known Error KE-104; router prunes Code and Record agents.",
+        "default_steer": "Verify Known Error KE-104 match in HistoryAgent for BATCH-901 and confirm next-business-day settlement.",
+        "default_client_reply": "Batch BATCH-901 was submitted on a regional clearing holiday at 09:15 IST.",
     },
     {
         "id": "S10",
+        "order": 7,
+        "severity": "P4",
+        "module": "beneficiary",
         "title": "How to add an international beneficiary",
         "ticket_class": "HOW_TO_USER_ERROR",
-        "tags": ["HOW_TO_USER_ERROR", "SMART_ROUTING", "DEV_SET"],
-        "description": "User how-to request; router activates only KnowledgeAgent and prunes all others.",
+        "tags": ["HOW_TO_USER_ERROR", "AGENT_PRUNING"],
+        "description": "User how-to inquiry; router activates only KnowledgeAgent and prunes Logs, Code, and Record agents.",
+        "default_steer": "Retrieve step-by-step international IBAN/SWIFT onboarding guide from DOC-BEN-02.",
+        "default_client_reply": "We are trying to add a UK GBP vendor using SWIFT and IBAN on the corporate portal.",
     },
     {
         "id": "S11",
-        "title": "Insufficient info -> ABSTAIN -> Client Reply Resume",
+        "order": 8,
+        "severity": "P2",
+        "module": "transfers",
+        "title": "Underspecified ticket -> Abstain -> Turn-2 Resume",
         "ticket_class": "INSUFFICIENT_INFO",
-        "tags": ["INSUFFICIENT_INFO", "ABSTAIN", "HUMAN_LOOP", "TEST_SET"],
-        "description": "Vague ticket causes principled abstention; client followup triggers re-investigation to conclusion.",
+        "tags": ["INSUFFICIENT_INFO", "ABSTAIN_RESUME"],
+        "description": "Vague ticket triggers principled abstention (Trust 0.22); client reply resumes to full root cause.",
+        "default_steer": "After client supplies TXN-1009 and 4:15 PM IST timestamp, verify cutoff.py UTC vs IST defect.",
+        "default_client_reply": "Happened at 4:15 PM IST on same-day transfer TXN-1009. Rejected with CUTOFF_EXCEEDED.",
     },
 ]
 
@@ -291,8 +331,47 @@ async def record_decision(
 
 @app.get("/api/scenarios")
 async def list_scenarios() -> List[Dict[str, Any]]:
-    """List the 8 Golden Scenarios with tags and metadata."""
-    return SCENARIOS_METADATA
+    """List the 8 Golden Scenarios with tags, metadata, and authentic customer ticket text."""
+    import json
+    enriched: List[Dict[str, Any]] = []
+    for item in SCENARIOS_METADATA:
+        entry = dict(item)
+        ticket_file = _REPO_ROOT / "data" / "bundles" / item["id"] / "ticket.json"
+        if ticket_file.exists():
+            try:
+                tdata = json.loads(ticket_file.read_text(encoding="utf-8"))
+                entry["ticket_id"] = tdata.get("id", f"TCK-{item['id']}")
+                entry["created_at"] = tdata.get("created_at")
+                entry["channel"] = tdata.get("channel", "portal")
+                entry["product_hint"] = tdata.get("product_hint", entry.get("module", "transfers"))
+                entry["ticket_text"] = tdata.get("text", item["description"])
+                entry["attachments"] = tdata.get("attachments", [])
+            except Exception:
+                entry["ticket_id"] = f"TCK-{item['id']}"
+                entry["ticket_text"] = item["description"]
+        else:
+            entry["ticket_id"] = f"TCK-{item['id']}"
+            entry["ticket_text"] = item["description"]
+        enriched.append(entry)
+    return enriched
+
+
+@app.get("/api/bundles/{scenario_id}/attachments/{filename}")
+async def get_bundle_attachment(scenario_id: str, filename: str) -> Response:
+    """Serve visual evidence attachments (e.g. S06 screenshot.png) with strict path validation."""
+    import re as _re
+    from fastapi.responses import FileResponse
+
+    if not _re.fullmatch(r"S\d{2}", scenario_id) or not _re.fullmatch(
+        r"[\w\-]+\.(?:png|jpg|jpeg|webp)", filename, _re.IGNORECASE
+    ):
+        raise HTTPException(status_code=400, detail="Invalid scenario or attachment filename.")
+    bundle_dir = (_REPO_ROOT / "data" / "bundles" / scenario_id).resolve()
+    target = (bundle_dir / filename).resolve()
+    if bundle_dir not in target.parents or not target.is_file():
+        raise HTTPException(status_code=404, detail="Attachment not found.")
+    media_type = "image/png" if filename.lower().endswith(".png") else "image/jpeg"
+    return FileResponse(str(target), media_type=media_type)
 
 
 @app.get("/api/profile")

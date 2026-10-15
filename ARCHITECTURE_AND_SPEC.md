@@ -66,24 +66,26 @@ TriagePilot is an Autonomous Initial Analyst that sits between raw client-report
 - **SSE Reconnect & Telemetry (`api/main.py`, `api/sse.py`, `engine/observability.py`):** SSE streams include `Last-Event-ID` cursor replay from persisted history, `Cache-Control: no-cache`, `Connection: keep-alive`, and `X-Accel-Buffering: no` headers; logs are emitted as single-line Cloud Logging JSON with PII/secret redaction.
 
 ### Implemented and verified
-- FastAPI backend and React/Tailwind frontend served from the same Cloud Run container (`https://triagepilot-ywgad5nv3a-uc.a.run.app`, revision `triagepilot-00008-2dt`).
-- Artifact Registry image build/deployment and Cloud Run `min-instances=1` with `--no-cpu-throttling`.
-- Vertex AI Gemini runtime configuration and live `gemini-2.5-flash` ticket classification with explicit execution provenance.
-- Deterministic pre-LLM PII masking and prompt-injection quarantine (`engine/masking.py`).
+- FastAPI backend and React/Tailwind Triage Command Center frontend (with 10-Stage Live Pipeline Progress Strip, Sorted `#1–#8` Incident Ingestion Queue + Direct Custom Ticket Intake, Live Pre-LLM PII/Injection Scanner, 4-Way Reality Cross-Examination Matrix, Multimodal Screenshot Preview, Sortable/Filterable Evidentiary Cards Board, and Tabbed Customer Reply / Jira Bug Draft Viewer) served from the same Cloud Run container (`https://triagepilot-ywgad5nv3a-uc.a.run.app`, revision `triagepilot-00011-92z`).
+- Artifact Registry image build/deployment (`data/clientrepo.bundle` unpacked to `/app/data/clientrepo/.git` during Docker build) and Cloud Run `min-instances=1` with `--no-cpu-throttling`.
+- Vertex AI Gemini runtime configuration and live execution of all four Gemini operations with bounded `ThinkingConfig` and explicit execution provenance:
+  - `ticket_classification` (`gemini-2.5-flash`, `thinking_budget=0`)
+  - `multimodal_vision_extraction` (`gemini-2.5-flash`, `types.Part.from_bytes` on `data/bundles/S06/screenshot.png`)
+  - `hypothesis_reconciliation` (`gemini-2.5-pro`, `thinking_budget=512`)
+  - `report_synthesis` (`gemini-2.5-flash`, `thinking_budget=0` followed by `mask_for_model` and `check_customer_reply` leak gate)
+- Deterministic pre-LLM PII masking and prompt-injection quarantine (`engine/masking.py`), including `[INJECTION_QUARANTINED]` scrubbing on displayed evidence cards.
 - Dynamic planner routing, agent pruning, and hard 12-call tool budget enforcement (`engine/planner.py`, `engine/tool_budget.py`).
-- Deterministic specialist adapters and pure-Python evidence verifier (`engine/verifier.py`).
-- Four-way reconciliation (`engine/reconcile.py`), deterministic trust formula, and principled abstention (`engine/trust.py`).
+- Deterministic specialist adapters and pure-Python evidence verifier (`engine/verifier.py`), including live 40-char git commit SHA verification (`142e868da6cd9334b266a84bdb51d33819898c68`) and validated image attachment serving (`GET /api/bundles/{scenario_id}/attachments/{filename}`).
+- Four-way reconciliation (`engine/reconcile.py`), deterministic trust formula, principled abstention (`engine/trust.py`), 193 passing `pytest` tests, and 8/8 Golden Scenarios passing in `scripts/run_eval.py`.
 - Maker-checker approval gate with report hash/revision/nonce binding (`engine/policy.py`) and customer-reply leak checking (`engine/leakcheck.py`).
 - Firestore investigation/event persistence (`engine/persistence.py`) and Firestore-backed SHA-256 audit ledger (`engine/audit.py`), verified live via `/readyz`, `POST /api/investigations`, `GET /api/investigations/{id}`, `GET /api/investigations/{id}/events`, and `GET /api/audit/verify`.
 - Cloud Logging-compatible structured JSON logging (`engine/observability.py`), SSE reconnect cursor with anti-buffering headers, and replay fallback mode.
 
 ### Implemented locally but not live-verified
-- Full 40-character commit SHA verification against `data/clientrepo/.git` (verified across 191 local pytest tests; in Cloud Build uploads, nested `.git` directories are excluded by ignore rules unless initialized during container build).
-- Live `gemini-2.5-pro` semantic hypothesis reconciliation completion within the 25-second per-call timeout (falls back deterministically when `gemini-2.5-pro` exceeds 25 seconds on Cloud Run).
+- Full 8-scenario live Vertex AI batch benchmark via `POST /api/eval/run?execution_mode=live_evaluation` (verified locally in `scripts/run_eval.py`; live `S01` and multimodal `S06` verified on Cloud Run).
 
 ### Pending
 - Native ADK `Runner` execution (current `engine/adk_orchestration.py` and `engine/adk_tools.py` are registration-only).
 - Schema-validated ADK output to `EvidenceCard` conversion.
 - Transactional/concurrency hardening of Firestore audit append across multiple instances.
-- Container-build initialization of `data/clientrepo/.git` and `gemini-2.5-pro` timeout/thinking tuning so all live scenarios verify code SHAs without fallback in production.
 - Final submission video and slide deck.

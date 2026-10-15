@@ -122,3 +122,33 @@ def test_investigation_lifecycle():
 def test_nonexistent_investigation_404():
     response = client.get("/api/investigations/INV-NONEXISTENT")
     assert response.status_code == 404
+
+
+def test_bundle_attachment_serving_and_security():
+    resp = client.get("/api/bundles/S06/attachments/screenshot.png")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "image/png"
+    assert resp.content.startswith(b"\x89PNG")
+
+    bad_ext = client.get("/api/bundles/S06/attachments/ticket.json")
+    assert bad_ext.status_code == 400
+
+    missing = client.get("/api/bundles/S06/attachments/missing.png")
+    assert missing.status_code == 404
+
+
+def test_s06_visual_evidence_and_s03_injection_quarantine():
+    s06_resp = client.post("/api/investigations?wait=true", json={"scenario_id": "S06", "mode": "live"})
+    assert s06_resp.status_code == 202
+    s06_id = s06_resp.json()["id"]
+    s06_report = client.get(f"/api/investigations/{s06_id}").json()
+    vis_cards = [c for c in s06_report["verified_cards"] if c["source_type"] == "visual"]
+    assert len(vis_cards) == 1
+    assert vis_cards[0]["pointer"]["image_url"] == "/api/bundles/S06/attachments/screenshot.png"
+
+    s03_resp = client.post("/api/investigations?wait=true", json={"scenario_id": "S03", "mode": "live"})
+    assert s03_resp.status_code == 202
+    s03_id = s03_resp.json()["id"]
+    s03_report = client.get(f"/api/investigations/{s03_id}").json()
+    for card in s03_report["verified_cards"] + s03_report["dropped_cards"]:
+        assert "ignore previous instructions" not in card["snippet"].lower()

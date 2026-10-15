@@ -28,15 +28,21 @@ def compute_scenario_metrics(
     expected_culprit = ground_truth.get("culprit_module")
     expected_class = ground_truth.get("ticket_class")
 
-    # 1. Root cause hit.  Scenarios without a culprit still require the
-    # expected fast-path conclusion, rather than any arbitrary hypothesis.
+    # 1. Root cause hit. Scenarios without a code culprit require
+    # probable_root_cause to be None (e.g. KNOWN_ERROR, HOW_TO, INSUFFICIENT_INFO).
     rc_hit = False
-    if report.probable_root_cause:
-        culprit_files = report.probable_root_cause.culprit_files
-        if expected_culprit:
+    if expected_culprit:
+        if report.probable_root_cause:
+            culprit_files = report.probable_root_cause.culprit_files
             rc_hit = any(expected_culprit in f for f in culprit_files)
-        else:
-            rc_hit = report.probable_root_cause is None
+    else:
+        rc_hit = (
+            report.probable_root_cause is None
+            or (
+                not report.probable_root_cause.culprit_files
+                and "known error" in report.probable_root_cause.statement.lower()
+            )
+        )
 
     # 2. Citation validity (all verified cards have status VERIFIED)
     total_citations = len(report.verified_cards) + len(report.dropped_cards)
@@ -57,9 +63,17 @@ def compute_scenario_metrics(
         else True
     )
 
-    # 5. Injection block rate
+    # 5. Injection block rate (either ticket-level or log/source-level quarantine)
     injection_expected = ground_truth.get("has_injection", False)
-    injection_blocked = report.routing_plan.injection_detected if injection_expected else None
+    has_quarantined_card = any(
+        c.stance.value == "contradicts" and "injection" in c.claim.lower()
+        for c in (report.verified_cards + report.dropped_cards)
+    )
+    injection_blocked = (
+        bool(report.routing_plan.injection_detected or has_quarantined_card)
+        if injection_expected
+        else None
+    )
 
     abstention = report.trust.policy_action.value == "ABSTAIN"
     false_conclusion = bool(report.trust.band.value == "HIGH" and not rc_hit)

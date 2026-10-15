@@ -270,15 +270,32 @@ class FixtureKnowledgeAdapter(KnowledgePort):
         self._pages: list[dict] = raw.get("pages", _FALLBACK_DOCS["pages"])
 
     def search_docs(self, query: str, limit: int = 5) -> list[dict[str, Any]]:
-        query_lower = query.lower()
-        scored = [
-            (p, sum(word in (p.get("title", "") + p.get("summary", "")).lower()
-                    for word in query_lower.split()))
-            for p in self._pages
-        ]
+        import re as _re
+        stop_words = {
+            "the", "and", "for", "not", "are", "was", "with", "from", "have",
+            "has", "can", "our", "out", "all", "any", "into", "this", "that",
+            "please", "transfer", "transfers",
+        }
+        words = [
+            w for w in _re.findall(r"[a-z0-9_-]{3,}", query.lower())
+            if w not in stop_words
+        ] or query.lower().split()
+
+        def _score_page(p: dict[str, Any]) -> int:
+            sec_text = " ".join(str(v) for v in (p.get("sections") or {}).values())
+            haystack = f"{p.get('page_id', '')} {p.get('title', '')} {p.get('summary', '')} {sec_text}".lower()
+            return sum(
+                2 if w in (p.get("title", "") + " " + p.get("page_id", "")).lower() else 1
+                for w in words
+                if w in haystack
+            )
+
+        scored = [(p, _score_page(p)) for p in self._pages]
         scored.sort(key=lambda x: x[1], reverse=True)
+        matched = [p for p, s in scored if s > 0]
+        selected = (matched or [p for p, _ in scored])[:limit]
         results = []
-        for page, _ in scored[:limit]:
+        for page in selected:
             results.append({
                 "page_id": page["page_id"],
                 "title": page["title"],
@@ -429,6 +446,23 @@ class FixtureCodeAdapter(CodePort):
         """Attempt to open the git repo; return None if not available."""
         if not self._repo_path.exists():
             return None
+        git_dir = self._repo_path / ".git"
+        bundle_path = _DATA_DIR / "clientrepo.bundle"
+        if not git_dir.exists() and self._repo_path == _CLIENT_REPO and bundle_path.exists():
+            try:
+                import shutil
+                import subprocess
+                import tempfile
+                with tempfile.TemporaryDirectory() as tmpdir:
+                    subprocess.run(
+                        ["git", "clone", str(bundle_path), tmpdir],
+                        check=True,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                    shutil.move(str(Path(tmpdir) / ".git"), str(git_dir))
+            except Exception:
+                pass
         try:
             import git  # gitpython
             return git.Repo(str(self._repo_path))
@@ -447,36 +481,62 @@ class FixtureCodeAdapter(CodePort):
             raise FileNotFoundError(f"Cannot read {path} at commit {sha}") from exc
 
     def search_code(self, query: str, limit: int = 10) -> list[dict[str, Any]]:
-        """Grep-style search across all tracked files."""
+        """Grep-style search across all tracked files, prioritizing domain modules."""
         if not self._repo_path.exists():
             return self._stub_search(query)
 
         results: list[dict[str, Any]] = []
-        query_lower = query.lower()
+        query_lower = query.lower().strip()
+        query_stem = query_lower[:-3].split("/")[-1] if query_lower.endswith(".py") else query_lower
 
+        candidate_files: list[tuple[int, str, Path]] = []
         for root, dirs, files in os.walk(self._repo_path):
-            # Skip .git directory
             dirs[:] = [d for d in dirs if d != ".git"]
             for fname in files:
                 if not fname.endswith((".py", ".js", ".ts", ".yaml", ".json", ".md")):
                     continue
-                fpath = Path(root) / fname
-                try:
-                    lines = fpath.read_text(encoding="utf-8", errors="replace").splitlines()
-                except OSError:
+                if fname == "__init__.py":
                     continue
+                fpath = Path(root) / fname
                 rel_path = str(fpath.relative_to(self._repo_path)).replace("\\", "/")
-                for i, line in enumerate(lines, start=1):
-                    if query_lower in line.lower():
-                        sha = self._head_sha()
-                        results.append({
-                            "path": rel_path,
-                            "line_number": i,
-                            "snippet": line.strip()[:200],
-                            "sha": sha,
-                        })
-                        if len(results) >= limit:
-                            return results
+                # Priority: 0 = exact filename match, 1 = domain submodule (app/*/*.py),
+                # 2 = top-level app/*.py (excluding config.py), 3 = config.py, 4 = docs/other
+                if query_stem and query_stem in fname.lower():
+                    prio = 0
+                elif rel_path.startswith("app/") and rel_path.count("/") >= 2 and fname.endswith(".py"):
+                    prio = 1
+                elif rel_path.startswith("app/") and fname != "config.py":
+                    prio = 2
+                elif fname == "config.py":
+                    prio = 3
+                else:
+                    prio = 4
+                candidate_files.append((prio, rel_path, fpath))
+
+        candidate_files.sort(key=lambda item: (item[0], item[1]))
+        sha = self._head_sha()
+
+        for prio, rel_path, fpath in candidate_files:
+            try:
+                lines = fpath.read_text(encoding="utf-8", errors="replace").splitlines()
+            except OSError:
+                continue
+            path_matches = query_lower in rel_path.lower() or (query_stem and query_stem in rel_path.lower())
+            for i, line in enumerate(lines, start=1):
+                stripped = line.strip()
+                if not stripped or stripped.startswith(('"""', "'''")):
+                    continue
+                if query_lower in line.lower() or (query_stem and query_stem in line.lower()) or (
+                    path_matches and any(k in line for k in ("def ", "if ", "return ", "raise "))
+                ):
+                    results.append({
+                        "path": rel_path,
+                        "line_number": i,
+                        "snippet": stripped[:200],
+                        "sha": sha,
+                    })
+                    if len(results) >= limit:
+                        return results
         return results
 
     def _head_sha(self) -> str:

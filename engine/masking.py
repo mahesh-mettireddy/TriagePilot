@@ -209,8 +209,8 @@ def redact_evidence_for_output(cards: list[Any]) -> list[Any]:
     for card in cards:
         try:
             clone = card.model_copy(deep=True)
-            clone.snippet = mask_for_model(clone.snippet, max_chars=400)
-            clone.claim = mask_for_model(clone.claim, max_chars=200)
+            clone.snippet = quarantine_prompt_injection(clone.snippet, max_chars=400)
+            clone.claim = quarantine_prompt_injection(clone.claim, max_chars=200)
             clone.pointer = {
                 str(key): mask_for_model(str(value), max_chars=200)
                 if key not in {"line_start", "line_end"}

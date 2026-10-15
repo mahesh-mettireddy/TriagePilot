@@ -406,9 +406,12 @@ async def generate_report(
     """
     Generate the final ReportOutput.
 
-    Uses deterministic builder (LLM report polishing can be added later).
+    Builds the deterministic verified report first, then (when Vertex AI / GenAI
+    is configured and the investigation concludes) polishes the executive summary
+    and customer reply via gemini-2.5-flash before re-running the deterministic
+    leak check and report-hash binding.
     """
-    return _build_report_deterministic(
+    report = _build_report_deterministic(
         ticket=ticket,
         routing_plan=routing_plan,
         verified_cards=verified_cards,
@@ -418,3 +421,60 @@ async def generate_report(
         trust=trust,
         investigation_id=investigation_id,
     )
+
+    from engine.ai_runtime import get_ai_runtime
+    runtime = get_ai_runtime()
+    if (
+        runtime.status.configured
+        and trust.policy_action in (PolicyAction.CONCLUDE, PolicyAction.CONCLUDE_WITH_CAVEAT)
+        and hypotheses
+    ):
+        try:
+            from google.genai import types  # type: ignore[import]
+
+            top_h = hypotheses[0]
+            prompt = (
+                "You are a Staff SRE writing an incident triage brief and a customer-safe reply.\n"
+                "Rules:\n"
+                "1. In 'executive_summary', write a concise 2-3 sentence technical root-cause summary for engineers citing the verified hypothesis, culprit file/commit, and trust score.\n"
+                "2. In 'customer_reply_draft', write a polite, clear 3-4 sentence response to the customer. NEVER include internal file paths (like app/... or .py), commit SHAs, internal hostnames, or raw account/phone numbers.\n"
+                f"Verified Hypothesis: {top_h.statement}\n"
+                f"Culprit Files: {', '.join(top_h.culprit_files) or 'None (Known Error / Guidance)'}\n"
+                f"Trust Score: {trust.score} ({trust.band.value})\n"
+                f"Workaround: {report.workaround or 'Engineering fix in progress'}\n"
+                'Return ONLY JSON: {"executive_summary": "...", "customer_reply_draft": "..."}'
+            )
+            raw = await runtime.generate_json(
+                model="gemini-2.5-flash",
+                prompt=prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    temperature=0.1,
+                    thinking_config=types.ThinkingConfig(thinking_budget=0),
+                ),
+                operation="report_synthesis",
+            )
+            if raw:
+                data = json.loads(raw)
+                exec_sum = (data.get("executive_summary") or "").strip()
+                cust_draft = (data.get("customer_reply_draft") or "").strip()
+                if exec_sum:
+                    report.summary = mask_for_model(exec_sum, max_chars=4000)
+                if cust_draft:
+                    safe_draft = mask_for_model(cust_draft, max_chars=4000)
+                    leak_dc = check_customer_reply(safe_draft)
+                    if not leak_dc.passed:
+                        safe_draft, leak_dc_2 = sanitize_or_flag(safe_draft)
+                        leak_result = LeakCheckResult(
+                            passed=leak_dc_2.passed,
+                            notes=leak_dc.notes + leak_dc_2.notes,
+                        )
+                    else:
+                        leak_result = LeakCheckResult(passed=leak_dc.passed, notes=leak_dc.notes)
+                    if leak_result.passed:
+                        report.customer_reply_draft = safe_draft
+                        report.leak_check = leak_result
+        except Exception as exc:
+            logger.warning("LLM report synthesis fell back to deterministic draft: %s", exc)
+
+    return bind_report_revision(report)

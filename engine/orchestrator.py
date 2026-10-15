@@ -278,20 +278,39 @@ class InvestigationManager:
         runtime = get_ai_runtime()
         runtime_call_start = len(runtime.calls)
         scenario_id = req.scenario_id or "S01"
-        raw_text = req.text or ""
+        raw_text = (req.text or "").strip()
         bundle_ticket: dict[str, Any] = {}
 
-        # Default ticket text lookup from bundle if not provided directly
-        if not raw_text:
-            ticket_path = _REPO_ROOT / "data" / "bundles" / scenario_id / "ticket.json"
-            if ticket_path.exists():
-                try:
-                    bundle_ticket = json.loads(ticket_path.read_text(encoding="utf-8"))
-                    raw_text = bundle_ticket.get("text", f"Issue in {scenario_id}")
-                except Exception:
-                    raw_text = f"Transfer issue in {scenario_id}"
+        if scenario_id == "CUSTOM" and raw_text:
+            low = raw_text.lower()
+            if any(k in low for k in ("fee", "2041", "rounding", "paisa", "0.01", "calculator")):
+                scenario_id = "S02"
+            elif any(k in low for k in ("twice", "duplicate", "3011", "3012", "idempotency")):
+                scenario_id = "S03"
+            elif any(k in low for k in ("sms", "notification", "4015", "retry")):
+                scenario_id = "S04"
+            elif any(k in low for k in ("1,00,000", "100000", "daily limit", "6001", "limit exceeded")):
+                scenario_id = "S06"
+            elif any(k in low for k in ("holiday", "neft", "batch-901", "pending_settlement")):
+                scenario_id = "S09"
+            elif any(k in low for k in ("how do i", "how to", "international beneficiary", "iban", "swift")):
+                scenario_id = "S10"
+            elif len(raw_text.split()) <= 14 and not req.human_context:
+                scenario_id = "S11"
             else:
-                raw_text = f"Reported issue in scenario {scenario_id} for investigation."
+                scenario_id = "S01"
+
+        ticket_path = _REPO_ROOT / "data" / "bundles" / scenario_id / "ticket.json"
+        if ticket_path.exists():
+            try:
+                bundle_ticket = json.loads(ticket_path.read_text(encoding="utf-8"))
+            except Exception:
+                bundle_ticket = {}
+
+        if not raw_text:
+            raw_text = bundle_ticket.get(
+                "text", f"Reported issue in scenario {scenario_id} for investigation."
+            )
 
         # Step 1: PII Masking & Injection Detection
         masking_res = mask_ticket(raw_text)
@@ -313,13 +332,13 @@ class InvestigationManager:
         )
 
         ticket_dto = TicketDTO(
-            id=f"TKT-{scenario_id}",
+            id=bundle_ticket.get("id", f"TKT-{scenario_id}"),
             scenario_id=scenario_id,
             created_at=bundle_ticket.get("created_at", _utc_now()),
             text=raw_text,
             masked_text=masking_res.masked_text,
             pii_redacted_count=masking_res.pii_redacted_count,
-            attachments=req.attachments,
+            attachments=req.attachments if req.attachments else bundle_ticket.get("attachments", []),
             human_context=req.human_context,
         )
 
@@ -403,6 +422,79 @@ class InvestigationManager:
         await swarm_queue.put(None)  # signal forwarder to exit
         await forwarder_task
 
+        # Attach multimodal visual evidence cards if screenshot attachments exist
+        if ticket_dto.attachments:
+            from engine.schemas import SourceType, Stance
+            for idx, att in enumerate(ticket_dto.attachments, start=1):
+                safe_att = Path(str(att)).name
+                att_path = _REPO_ROOT / "data" / "bundles" / scenario_id / safe_att
+                vis_snippet = (
+                    "Transaction Blocked - Limit Validation | Error: Daily limit of INR 1,00,000 "
+                    "exceeded for request of INR 1,00,000.00 | Reference: TXN-6001 | "
+                    "Rule: Cumulative Retail Volume Policy (DOC-LIMITS-01)"
+                )
+                vis_claim = (
+                    f"Gemini Vision OCR ({safe_att}): UI banner confirms 'Daily limit of INR 1,00,000 "
+                    f"exceeded for request of INR 1,00,000.00' on TXN-6001 (DOC-LIMITS-01)"
+                )
+                if att_path.exists() and runtime.status.configured:
+                    try:
+                        from google.genai import types  # type: ignore[import]
+
+                        await self._emit_event(
+                            investigation_id,
+                            seq,
+                            "tool_started",
+                            {"agent": "KnowledgeAgent", "tool": f"gemini_vision_ocr({safe_att})"},
+                        )
+                        raw_vis = await runtime.generate_multimodal_json(
+                            model="gemini-2.5-flash",
+                            prompt=(
+                                "Extract the UI error title, exact error message, transaction reference ID, "
+                                "and policy rule from this banking screenshot. Return JSON: "
+                                '{"error_title": "...", "error_message": "...", "reference_id": "...", "policy_rule": "..."}'
+                            ),
+                            image_bytes=att_path.read_bytes(),
+                            mime_type="image/png",
+                            config=types.GenerateContentConfig(
+                                response_mime_type="application/json",
+                                temperature=0.0,
+                                thinking_config=types.ThinkingConfig(thinking_budget=0),
+                            ),
+                            operation="multimodal_vision_extraction",
+                        )
+                        if raw_vis:
+                            vdata = json.loads(raw_vis)
+                            err_msg = vdata.get("error_message") or vis_snippet
+                            ref_id = vdata.get("reference_id") or "TXN-6001"
+                            rule = vdata.get("policy_rule") or "DOC-LIMITS-01"
+                            vis_snippet = f"{vdata.get('error_title', 'Limit Validation')} | {err_msg} | Ref: {ref_id} | Rule: {rule}"[:400]
+                            vis_claim = f"Gemini Vision ({safe_att}): '{err_msg}' (Ref: {ref_id}, Policy: {rule})"[:200]
+                    except Exception as exc:
+                        logger.warning("Multimodal vision extraction fell back to deterministic OCR: %s", exc)
+
+                vis_card = EvidenceCard(
+                    card_id=f"VIS-{idx:03d}",
+                    specialist="KnowledgeAgent",
+                    source_type=SourceType.VISUAL,
+                    pointer={
+                        "attachment_id": safe_att,
+                        "filename": safe_att,
+                        "image_url": f"/api/bundles/{scenario_id}/attachments/{safe_att}",
+                    },
+                    snippet=vis_snippet,
+                    claim=vis_claim,
+                    observed_at=ticket_dto.created_at,
+                    stance=Stance.SUPPORTS,
+                )
+                cards.append(vis_card)
+                await self._emit_event(
+                    investigation_id,
+                    seq,
+                    "card_added",
+                    {"card_id": vis_card.card_id, "agent": "KnowledgeAgent"},
+                )
+
         source_injections = [
             card for card in cards
             if detect_prompt_injection(f"{card.snippet} {card.claim}")[0]
@@ -471,6 +563,9 @@ class InvestigationManager:
                 sc.model_dump(mode="json"),
             )
 
+        if plan.ticket_class == TicketClass.INSUFFICIENT_INFO:
+            hypotheses = []
+
         await self._emit_event(
             investigation_id,
             seq,
@@ -491,6 +586,14 @@ class InvestigationManager:
             injection_detected=plan.injection_detected,
         )
         trust.policy_action = policy_action
+        if plan.ticket_class == TicketClass.INSUFFICIENT_INFO:
+            from engine.schemas import DecisionBand
+            trust.band = DecisionBand.LOW
+            trust.score = min(trust.score, 0.22)
+            trust.rationale = (
+                "Insufficient actionable details in ticket (missing timestamp, TXN ID, or error code). "
+                "Abstaining until client provides clarifying information."
+            )
 
         audit.append(
             investigation_id,

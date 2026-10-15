@@ -50,6 +50,14 @@ COPY profiles/ /app/profiles/
 COPY data/ /app/data/
 COPY scripts/ /app/scripts/
 
+# Restore clientrepo .git history from bundle (since .dockerignore/.gcloudignore strip nested .git dirs)
+RUN if [ ! -d /app/data/clientrepo/.git ] && [ -f /app/data/clientrepo.bundle ]; then \
+        git clone /app/data/clientrepo.bundle /tmp/clientrepo && \
+        mv /tmp/clientrepo/.git /app/data/clientrepo/.git && \
+        rm -rf /tmp/clientrepo && \
+        git -C /app/data/clientrepo reset --hard HEAD; \
+    fi && git config --system --add safe.directory /app/data/clientrepo
+
 # Copy built React Cockpit from Stage 1 into /app/ui/dist
 COPY --from=ui-builder /build/ui/dist /app/ui/dist
 

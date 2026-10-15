@@ -42,6 +42,8 @@ def evaluate_policy_gate(
     """
     if ticket_class == TicketClass.SECURITY_SENSITIVE:
         return PolicyAction.ESCALATE_SECURITY
+    if ticket_class == TicketClass.INSUFFICIENT_INFO:
+        return PolicyAction.ABSTAIN
 
     # Return the policy action already determined by mathematical trust
     return trust.policy_action

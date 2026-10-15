@@ -1,25 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { getProfile } from '../api';
-import { 
-  Layers, 
-  Cpu, 
-  ShieldCheck, 
-  GitBranch, 
-  Database, 
-  BookOpen, 
-  FileText, 
-  CheckCircle2, 
-  Terminal, 
-  ArrowRight, 
-  FileCode, 
-  ExternalLink,
+import {
+  Cpu,
+  ShieldCheck,
+  Database,
+  CheckCircle2,
+  Terminal,
+  FileCode,
   Lock,
-  Workflow
+  Workflow,
+  Plug,
 } from 'lucide-react';
 
 export const ArchitectureScreen: React.FC = () => {
   const [profile, setProfile] = useState<Record<string, any>>({});
-  const [activeTab, setActiveTab] = useState<'diagram' | 'profile' | 'onboarding'>('diagram');
+  const [activeTab, setActiveTab] = useState<'diagram' | 'connectors' | 'profile'>('diagram');
 
   useEffect(() => {
     async function load() {
@@ -36,155 +31,176 @@ export const ArchitectureScreen: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Header Banner */}
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="bg-slate-900/90 border border-slate-800/90 rounded-xl p-6 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-teal-950 text-teal-400 border border-teal-500/30">
-              HEXAGONAL ARCHITECTURE
+          <div className="flex items-center gap-2 mb-1.5">
+            <span className="text-xs font-mono font-bold px-2.5 py-0.5 rounded bg-teal-950 text-teal-300 border border-teal-500/30">
+              HEXAGONAL PORTS &amp; ADAPTERS
             </span>
-            <span className="text-xs text-slate-500 font-mono">
-              Ports & Adapters • Strict Trust Gate • Zero Phantom Hallucinations
+            <span className="text-xs text-slate-400 font-mono">
+              Zero-Hallucination Verifier • Mathematical Trust Gate • Cryptographic Ledger
             </span>
           </div>
           <h2 className="text-2xl font-bold text-slate-100">
-            System Architecture & Extensibility
+            TriagePilot™ Architecture &amp; Enterprise Connectors
           </h2>
-          <p className="text-sm text-slate-400 mt-1 max-w-2xl">
-            TriagePilot decouples the AI reasoning engine from external observability systems via clean ports, enforcing deterministic verification before any claim reaches a triage brief.
+          <p className="text-sm text-slate-400 mt-1 max-w-3xl">
+            TriagePilot™ decouples the neuro-symbolic reasoning engine from external repositories, telemetry, and ticketing systems via 6 typed hexagonal ports in <code className="text-teal-300 font-mono">engine/ports/base.py</code>.
           </p>
         </div>
 
         {/* Tab switcher */}
-        <div className="flex bg-slate-950 p-1 rounded-lg border border-slate-800 text-xs font-medium">
+        <div className="flex bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs font-semibold shrink-0">
           <button
             onClick={() => setActiveTab('diagram')}
-            className={`px-3 py-1.5 rounded-md transition-colors ${
-              activeTab === 'diagram' ? 'bg-teal-600 text-white font-semibold' : 'text-slate-400 hover:text-slate-200'
+            className={`px-3.5 py-1.5 rounded-lg transition-colors ${
+              activeTab === 'diagram' ? 'bg-teal-600 text-white' : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            System Diagram
+            10-Stage Pipeline
+          </button>
+          <button
+            onClick={() => setActiveTab('connectors')}
+            className={`px-3.5 py-1.5 rounded-lg transition-colors ${
+              activeTab === 'connectors' ? 'bg-teal-600 text-white' : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            Enterprise Connectors
           </button>
           <button
             onClick={() => setActiveTab('profile')}
-            className={`px-3 py-1.5 rounded-md transition-colors ${
-              activeTab === 'profile' ? 'bg-teal-600 text-white font-semibold' : 'text-slate-400 hover:text-slate-200'
+            className={`px-3.5 py-1.5 rounded-lg transition-colors ${
+              activeTab === 'profile' ? 'bg-teal-600 text-white' : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            Product Profile (YAML)
-          </button>
-          <button
-            onClick={() => setActiveTab('onboarding')}
-            className={`px-3 py-1.5 rounded-md transition-colors ${
-              activeTab === 'onboarding' ? 'bg-teal-600 text-white font-semibold' : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            10-Min Onboarding
+            Active Profile (YAML)
           </button>
         </div>
       </div>
 
       {/* Tab 1: System Diagram */}
       {activeTab === 'diagram' && (
-        <div className="space-y-6">
-          {/* Hexagonal Pipeline Layout */}
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-xl space-y-6">
-            <h3 className="font-semibold text-sm text-slate-200 flex items-center gap-2">
-              <Workflow className="w-4 h-4 text-teal-400" />
-              End-to-End 12-Step Triage Pipeline
-            </h3>
+        <div className="bg-slate-900/90 border border-slate-800/90 rounded-xl p-6 shadow-xl space-y-6">
+          <h3 className="font-bold text-sm text-slate-200 flex items-center gap-2">
+            <Workflow className="w-4 h-4 text-teal-400" />
+            End-to-End Neuro-Symbolic Triage Architecture
+          </h3>
 
-            {/* Pipeline Stage Blocks */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              {/* Step 1: Ingestion */}
-              <div className="bg-slate-950/80 border border-slate-800 rounded-lg p-4 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="font-mono text-xs text-teal-400 font-bold">STAGE 01</span>
-                  <Lock className="w-4 h-4 text-emerald-400" />
-                </div>
-                <h4 className="font-bold text-slate-200 text-xs">Ingest & Mask PII</h4>
-                <p className="text-[11px] text-slate-400 leading-relaxed">
-                  Presidio PII scrubber replaces PAN, Aadhaar, email, and phone with deterministic tokens. LeakCheck verifies zero leakage before model ingestion.
-                </p>
+          {/* 4 Macro Pipeline Stage Blocks */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="bg-slate-950/90 border border-slate-800 rounded-xl p-4 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-xs text-teal-400 font-bold">STAGES 01–02</span>
+                <Lock className="w-4 h-4 text-emerald-400" />
               </div>
+              <h4 className="font-bold text-slate-100 text-xs">PII Scrubbing &amp; Dynamic Router</h4>
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                Deterministic PII scrubber masks accounts, PAN, IFSC, phone, and email tokens and quarantines prompt injections before Gemini 2.5 Flash classifies the ticket and prunes unneeded agents.
+              </p>
+            </div>
 
-              {/* Step 2: Routing & Specialists */}
-              <div className="bg-slate-950/80 border border-slate-800 rounded-lg p-4 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="font-mono text-xs text-teal-400 font-bold">STAGE 02</span>
-                  <Cpu className="w-4 h-4 text-teal-400" />
-                </div>
-                <h4 className="font-bold text-slate-200 text-xs">Route & Specialist Swarm</h4>
-                <p className="text-[11px] text-slate-400 leading-relaxed">
-                  Dynamic planner classifies ticket & prunes unnecessary agents (e.g. prunes Code/Logs for user how-tos). Active specialists query read ports concurrently.
-                </p>
+            <div className="bg-slate-950/90 border border-slate-800 rounded-xl p-4 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-xs text-teal-400 font-bold">STAGES 03–04</span>
+                <Cpu className="w-4 h-4 text-teal-400" />
               </div>
+              <h4 className="font-bold text-slate-100 text-xs">5-Agent Swarm &amp; Python Verifier</h4>
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                Active specialists query read ports concurrently under a strict 12-call tool budget. Pure-Python <code className="text-teal-300 font-mono">verifier.py</code> validates every commit SHA, line range, log ID, and doc section.
+              </p>
+            </div>
 
-              {/* Step 3: Verifier & Reconciler */}
-              <div className="bg-slate-950/80 border border-slate-800 rounded-lg p-4 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="font-mono text-xs text-teal-400 font-bold">STAGE 03</span>
-                  <ShieldCheck className="w-4 h-4 text-amber-400" />
-                </div>
-                <h4 className="font-bold text-slate-200 text-xs">Verifier & Reconciler</h4>
-                <p className="text-[11px] text-slate-400 leading-relaxed">
-                  Deterministic Verifier checks AST/line anchors and drops hallucinated claims. Reconciler resolves TIME_MISMATCH and BEHAVIOUR_MISMATCH contradictions.
-                </p>
+            <div className="bg-slate-950/90 border border-slate-800 rounded-xl p-4 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-xs text-teal-400 font-bold">STAGES 05–07</span>
+                <ShieldCheck className="w-4 h-4 text-amber-400" />
               </div>
+              <h4 className="font-bold text-slate-100 text-xs">4-Way Reconciler &amp; Trust Math</h4>
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                Flags <code className="text-amber-300 font-mono">TIME_MISMATCH</code>, <code className="text-amber-300 font-mono">STALE_DOC_FLAG</code>, and <code className="text-amber-300 font-mono">BEHAVIOUR_MISMATCH</code>. Computes deterministic Trust Score and abstains if Trust &lt; 0.45.
+              </p>
+            </div>
 
-              {/* Step 4: Trust & Maker-Checker */}
-              <div className="bg-slate-950/80 border border-slate-800 rounded-lg p-4 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="font-mono text-xs text-teal-400 font-bold">STAGE 04</span>
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+            <div className="bg-slate-950/90 border border-slate-800 rounded-xl p-4 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-xs text-teal-400 font-bold">STAGES 08–10</span>
+                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+              </div>
+              <h4 className="font-bold text-slate-100 text-xs">LeakCheck, SHA-256 &amp; Maker-Checker</h4>
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                Sanitizes customer replies via <code className="text-teal-300 font-mono">leakcheck.py</code>, appends to the SHA-256 hash-chained audit ledger, and enforces revision-bound human approval before write-back.
+              </p>
+            </div>
+          </div>
+
+          {/* 6 Hexagonal Ports */}
+          <div className="pt-4 border-t border-slate-800 grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-3">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-teal-400 flex items-center gap-1.5">
+                <Database className="w-3.5 h-3.5" /> 5 Read-Only Evidentiary Ports (engine/ports/base.py)
+              </h4>
+              <div className="space-y-2 text-xs">
+                <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
+                  <strong className="text-teal-300 font-mono">CodePort:</strong>{' '}
+                  <span className="text-slate-300">
+                    Read-only Git inspection at pinned 40-char commit SHA (<code className="font-mono">search_code</code>, <code className="font-mono">read_lines</code>, <code className="font-mono">git_blame</code>, <code className="font-mono">git_diff</code>, <code className="font-mono">git_log</code>).
+                  </span>
                 </div>
-                <h4 className="font-bold text-slate-200 text-xs">Trust Math & Human Gate</h4>
-                <p className="text-[11px] text-slate-400 leading-relaxed">
-                  Calculates formula-driven Trust Score (0.00-1.00). Maker-Checker gate requires human sign-off before any mutation pushes to Jira or the client.
-                </p>
+                <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
+                  <strong className="text-teal-300 font-mono">LogPort:</strong>{' '}
+                  <span className="text-slate-300">
+                    Normalized application telemetry (<code className="font-mono">query_logs</code>, <code className="font-mono">digest_signatures</code>, <code className="font-mono">trace_lookup</code>).
+                  </span>
+                </div>
+                <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
+                  <strong className="text-teal-300 font-mono">KnowledgePort:</strong>{' '}
+                  <span className="text-slate-300">
+                    Runbooks and architecture docs with <code className="font-mono">last_updated</code> timestamps (<code className="font-mono">search_docs</code>, <code className="font-mono">get_doc_section</code>).
+                  </span>
+                </div>
+                <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
+                  <strong className="text-teal-300 font-mono">HistoryPort:</strong>{' '}
+                  <span className="text-slate-300">
+                    Historical incidents, Known Errors (<code className="font-mono">KE-*</code>), and deployment change records (<code className="font-mono">CHG-*</code>).
+                  </span>
+                </div>
+                <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
+                  <strong className="text-teal-300 font-mono">RecordPort:</strong>{' '}
+                  <span className="text-slate-300">
+                    Parameterized, pre-masked transaction/ledger snapshots (<code className="font-mono">get_transfer_record</code> — zero raw SQL).
+                  </span>
+                </div>
               </div>
             </div>
 
-            {/* Ports & Adapters Architecture Details */}
-            <div className="pt-4 border-t border-slate-800 grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Left: Read Ports */}
-              <div className="space-y-3">
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-teal-400 flex items-center gap-1.5">
-                  <Database className="w-3.5 h-3.5" /> Pluggable Read Ports
-                </h4>
-                <div className="space-y-2 text-xs">
-                  <div className="p-2.5 rounded bg-slate-950 border border-slate-850">
-                    <strong className="text-slate-200">GitPort:</strong> Clones client repositories, extracts commit history, diffs, and AST line anchors.
-                  </div>
-                  <div className="p-2.5 rounded bg-slate-950 border border-slate-850">
-                    <strong className="text-slate-200">LogPort:</strong> Searches distributed logs, traces, exceptions, and boundary metrics.
-                  </div>
-                  <div className="p-2.5 rounded bg-slate-950 border border-slate-850">
-                    <strong className="text-slate-200">DocPort:</strong> Indexes runbooks, architecture specs, and detected stale doc flags.
-                  </div>
-                  <div className="p-2.5 rounded bg-slate-950 border border-slate-850">
-                    <strong className="text-slate-200">RecordPort:</strong> Queries transactional ledgers, database audit trails, and balances.
-                  </div>
+            <div className="space-y-3">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-teal-400 flex items-center gap-1.5">
+                <Terminal className="w-3.5 h-3.5" /> Maker-Checker WritePort &amp; Cryptographic Governance
+              </h4>
+              <div className="space-y-2 text-xs">
+                <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
+                  <strong className="text-emerald-300 font-mono">WritePort.create_issue():</strong>{' '}
+                  <span className="text-slate-300">
+                    Creates engineering bug tickets with verified code permalinks and repro steps only after human sign-off.
+                  </span>
                 </div>
-              </div>
-
-              {/* Right: Write Ports & Audit */}
-              <div className="space-y-3">
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-teal-400 flex items-center gap-1.5">
-                  <Terminal className="w-3.5 h-3.5" /> Pluggable Write Ports & Audit Ledger
-                </h4>
-                <div className="space-y-2 text-xs">
-                  <div className="p-2.5 rounded bg-slate-950 border border-slate-850">
-                    <strong className="text-slate-200">JiraPort:</strong> Formats and files verified Jira bug tickets with reproduction steps.
-                  </div>
-                  <div className="p-2.5 rounded bg-slate-950 border border-slate-850">
-                    <strong className="text-slate-200">KBGapPort:</strong> Flags documentation gaps or stale runbooks to engineering docs.
-                  </div>
-                  <div className="p-2.5 rounded bg-slate-950 border border-slate-850">
-                    <strong className="text-slate-200">AuditPort:</strong> Records every pipeline event into an immutable SHA-256 hash chain.
-                  </div>
-                  <div className="p-2.5 rounded bg-slate-950 border border-slate-850">
-                    <strong className="text-slate-200">ClientReplyPort:</strong> Generates client-facing explanations and diagnostic inquiries.
-                  </div>
+                <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
+                  <strong className="text-emerald-300 font-mono">WritePort.post_comment():</strong>{' '}
+                  <span className="text-slate-300">
+                    Posts <code className="font-mono">LeakCheck</code>-verified customer responses back to the support channel.
+                  </span>
+                </div>
+                <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
+                  <strong className="text-teal-300 font-mono">Revision &amp; Hash Binding (policy.py):</strong>{' '}
+                  <span className="text-slate-300">
+                    Every approval payload is verified against <code className="font-mono">report_revision</code>, <code className="font-mono">report_hash</code>, and <code className="font-mono">decision_id</code> idempotency keys.
+                  </span>
+                </div>
+                <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
+                  <strong className="text-teal-300 font-mono">SHA-256 Audit Chain (audit.py):</strong>{' '}
+                  <span className="text-slate-300">
+                    Every pipeline step appends <code className="font-mono">SHA256(prev_hash || canonical_json)</code> to Cloud Firestore.
+                  </span>
                 </div>
               </div>
             </div>
@@ -192,77 +208,88 @@ export const ArchitectureScreen: React.FC = () => {
         </div>
       )}
 
-      {/* Tab 2: Profile YAML */}
-      {activeTab === 'profile' && (
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-xl space-y-4">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+      {/* Tab 2: Enterprise Connectors */}
+      {activeTab === 'connectors' && (
+        <div className="bg-slate-900/90 border border-slate-800/90 rounded-xl p-6 shadow-xl space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
             <div>
-              <h3 className="font-semibold text-sm text-slate-200 flex items-center gap-2">
-                <FileCode className="w-4 h-4 text-teal-400" />
-                Active Product Profile: profiles/transfers.yaml
+              <h3 className="font-bold text-base text-slate-100 flex items-center gap-2">
+                <Plug className="w-4 h-4 text-teal-400" />
+                Plug-and-Play Enterprise Adapter Matrix
               </h3>
-              <p className="text-xs text-slate-400">
-                Declarative profile defining service boundaries, error taxonomy, PII rules, and agent tool budgets
+              <p className="text-xs text-slate-400 mt-0.5">
+                Connect live production repositories, observability streams, and ticketing systems without changing a single line of the core verifier or trust engine.
               </p>
             </div>
-            <span className="font-mono text-xs px-2 py-0.5 rounded bg-teal-950 text-teal-300 border border-teal-500/30">
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+            <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+              <span className="font-mono text-teal-400 font-bold">1. CodePort → GitHub / GitLab API</span>
+              <p className="text-slate-300 leading-relaxed">
+                Point <code className="text-teal-300 font-mono">CodePort</code> to GitHub GraphQL/REST APIs or a shallow bare Git mirror. <code className="text-teal-300 font-mono">verifier.py</code> validates every 40-char commit SHA and line range before citations are accepted.
+              </p>
+            </div>
+
+            <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+              <span className="font-mono text-teal-400 font-bold">2. LogPort → Cloud Logging / Datadog</span>
+              <p className="text-slate-300 leading-relaxed">
+                Implement <code className="text-teal-300 font-mono">LogPort</code> over <code className="font-mono">google-cloud-logging</code>, Datadog, or OpenTelemetry traces. <code className="text-teal-300 font-mono">verifier.py</code> re-verifies <code className="font-mono">insertId</code> and UTC timestamps within ±1s tolerance.
+              </p>
+            </div>
+
+            <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+              <span className="font-mono text-teal-400 font-bold">3. KnowledgePort → Confluence / Vertex Search</span>
+              <p className="text-slate-300 leading-relaxed">
+                Connect Confluence CQL or Vertex AI Search. <code className="text-teal-300 font-mono">reconcile.py</code> compares <code className="font-mono">doc.last_updated</code> against <code className="font-mono">commit.date</code> to flag <code className="text-amber-300 font-mono">STALE_DOC_FLAG</code> automatically.
+              </p>
+            </div>
+
+            <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+              <span className="font-mono text-teal-400 font-bold">4. RecordPort → Read-Replica Snapshot API</span>
+              <p className="text-slate-300 leading-relaxed">
+                Execute parameterized read-only lookups against AlloyDB/Cloud SQL replicas and pass records through <code className="text-teal-300 font-mono">mask_for_model()</code> before specialist inspection.
+              </p>
+            </div>
+
+            <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+              <span className="font-mono text-teal-400 font-bold">5. HistoryPort → Jira / ServiceNow / Cloud Deploy</span>
+              <p className="text-slate-300 leading-relaxed">
+                Query past resolved incidents, Known Error databases, and deployment windows to power 2-call fast-path resolution for known operational issues.
+              </p>
+            </div>
+
+            <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+              <span className="font-mono text-teal-400 font-bold">6. MCP Server Bridge Support</span>
+              <p className="text-slate-300 leading-relaxed">
+                Wrap standard Model Context Protocol (MCP) tools (GitHub MCP, Cloud Observability MCP, Atlassian MCP) inside TriagePilot&apos;s <code className="text-teal-300 font-mono">ToolBudget</code> (max 12 calls) and deterministic verifier.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tab 3: Profile YAML */}
+      {activeTab === 'profile' && (
+        <div className="bg-slate-900/90 border border-slate-800/90 rounded-xl p-6 shadow-xl space-y-4">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+            <div>
+              <h3 className="font-bold text-sm text-slate-200 flex items-center gap-2">
+                <FileCode className="w-4 h-4 text-teal-400" />
+                Active Domain Profile Configuration
+              </h3>
+              <p className="text-xs text-slate-400">
+                Declarative YAML configuration governing service ownership mappings, PII scrubbing rules, and tool budgets
+              </p>
+            </div>
+            <span className="font-mono text-xs px-2.5 py-1 rounded bg-teal-950 text-teal-300 border border-teal-500/30">
               profiles/transfers.yaml
             </span>
           </div>
 
-          <pre className="bg-slate-950 p-4 rounded-lg border border-slate-850 text-xs font-mono text-slate-300 overflow-x-auto leading-relaxed max-h-[600px]">
+          <pre className="bg-slate-950 p-4 rounded-xl border border-slate-800 text-xs font-mono text-slate-300 overflow-x-auto leading-relaxed max-h-[550px]">
             <code>{JSON.stringify(profile, null, 2)}</code>
           </pre>
-        </div>
-      )}
-
-      {/* Tab 3: 10-Minute Onboarding */}
-      {activeTab === 'onboarding' && (
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-xl space-y-6">
-          <div>
-            <h3 className="font-semibold text-base text-slate-200 mb-1">
-              10-Minute Product Onboarding Guide
-            </h3>
-            <p className="text-xs text-slate-400">
-              How to onboard a new microservice or product domain into TriagePilot in under 10 minutes.
-            </p>
-          </div>
-
-          <div className="space-y-4 text-xs">
-            {/* Step 1 */}
-            <div className="p-4 rounded-lg bg-slate-950/80 border border-slate-800 space-y-2">
-              <span className="font-mono text-teal-400 font-bold">STEP 1: Create a Product Profile YAML</span>
-              <p className="text-slate-300 leading-relaxed">
-                Add a new YAML file to <code className="text-teal-300 bg-slate-900 px-1 py-0.5 rounded font-mono">profiles/my_service.yaml</code> defining:
-              </p>
-              <ul className="list-disc list-inside text-slate-400 space-y-1">
-                <li><code className="text-slate-300 font-mono">product.name</code> and <code className="text-slate-300 font-mono">product.domain</code> (e.g. transfers, auth, payments)</li>
-                <li><code className="text-slate-300 font-mono">taxonomy.classes</code> and <code className="text-slate-300 font-mono">taxonomy.severities</code></li>
-                <li><code className="text-slate-300 font-mono">budgets.max_tool_calls</code> (default 12)</li>
-              </ul>
-            </div>
-
-            {/* Step 2 */}
-            <div className="p-4 rounded-lg bg-slate-950/80 border border-slate-800 space-y-2">
-              <span className="font-mono text-teal-400 font-bold">STEP 2: Connect Observability Read Adapters</span>
-              <p className="text-slate-300 leading-relaxed">
-                Implement the 5 read interfaces in <code className="text-teal-300 bg-slate-900 px-1 py-0.5 rounded font-mono">engine/ports/base.py</code>:
-              </p>
-              <ul className="list-disc list-inside text-slate-400 space-y-1">
-                <li><code className="text-slate-300 font-mono">GitPort</code>: Point to your GitHub/GitLab repository URI or token.</li>
-                <li><code className="text-slate-300 font-mono">LogPort</code>: Connect Datadog, Google Cloud Logging, or Elasticsearch.</li>
-                <li><code className="text-slate-300 font-mono">DocPort</code>: Connect Confluence or Notion runbook exports.</li>
-              </ul>
-            </div>
-
-            {/* Step 3 */}
-            <div className="p-4 rounded-lg bg-slate-950/80 border border-slate-800 space-y-2">
-              <span className="font-mono text-teal-400 font-bold">STEP 3: Configure Human-in-the-Loop Webhook</span>
-              <p className="text-slate-300 leading-relaxed">
-                Connect the Maker-Checker approval endpoint <code className="text-teal-300 bg-slate-900 px-1 py-0.5 rounded font-mono">POST /api/investigations/{'{id}'}/decision</code> to your Slack/Teams SRE on-call channel or Jira bot.
-              </p>
-            </div>
-          </div>
         </div>
       )}
     </div>

@@ -335,6 +335,7 @@ class Planner:
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
                     temperature=0.0,
+                    thinking_config=types.ThinkingConfig(thinking_budget=0),
                 ),
                 operation="ticket_classification",
             )

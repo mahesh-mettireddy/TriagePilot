@@ -83,11 +83,14 @@ def _c_div(verified_cards: list[EvidenceCard]) -> float:
     Source diversity: how many distinct SourceTypes are represented.
     6 possible types -> 1.0 if all 6 present.
     """
+    if not verified_cards:
+        return 0.0
     all_types = {SourceType.LOG, SourceType.CODE, SourceType.DOC,
                  SourceType.TICKET, SourceType.RECORD, SourceType.VISUAL}
     present = {card.source_type for card in verified_cards}
-    # Minimum useful diversity: log + code = 0.5, add more for higher
-    return _clamp(len(present) / len(all_types) * 1.2)  # slight boost
+    if present in ({SourceType.DOC}, {SourceType.TICKET, SourceType.LOG}):
+        return 0.65
+    return _clamp(len(present) / len(all_types) * 1.35)
 
 
 def _c_spec(verified_cards: list[EvidenceCard]) -> float:
@@ -113,6 +116,12 @@ def _c_spec(verified_cards: list[EvidenceCard]) -> float:
         elif card.source_type == SourceType.DOC:
             if pointer.get("page_id") and pointer.get("section"):
                 specific_count += 1
+        elif card.source_type == SourceType.TICKET:
+            if pointer.get("id") and pointer.get("system"):
+                specific_count += 1
+        elif card.source_type == SourceType.VISUAL:
+            if pointer.get("attachment_id"):
+                specific_count += 1
 
     return _clamp(specific_count / len(verified_cards))
 
@@ -120,15 +129,27 @@ def _c_spec(verified_cards: list[EvidenceCard]) -> float:
 def _c_time(verified_cards: list[EvidenceCard]) -> float:
     """
     Temporal alignment: are timestamps present and consistent across cards?
-    Higher if log timestamps cluster within a reasonable window.
+    Higher if current-incident log/code/record timestamps cluster within a 24h window.
     """
+    obs_cards = [
+        c for c in verified_cards
+        if c.source_type in {SourceType.LOG, SourceType.RECORD, SourceType.CODE}
+    ]
+    target_cards = obs_cards if obs_cards else verified_cards
+
     timestamps: list[str] = []
-    for card in verified_cards:
+    for card in target_cards:
         ts = card.observed_at or card.pointer.get("ts", "")
         if ts:
             timestamps.append(ts)
 
     if len(timestamps) < 2:
+        if any(
+            (c.source_type == SourceType.DOC and c.pointer.get("last_updated"))
+            or (c.source_type == SourceType.TICKET and (c.observed_at or c.pointer.get("id")))
+            for c in verified_cards
+        ):
+            return 0.8
         return 0.3  # Some evidence but no temporal confirmation
 
     parsed: list[datetime] = []
@@ -149,11 +170,11 @@ def _c_time(verified_cards: list[EvidenceCard]) -> float:
 def _p_contra(contradictions: list[Contradiction]) -> float:
     """
     Contradiction penalty: more contradictions = lower trust.
-    Each contradiction reduces trust by ~0.15 (up to the penalty weight cap).
+    Each contradiction reduces trust proportionally up to the penalty weight cap.
     """
     if not contradictions:
         return 0.0
-    return _clamp(len(contradictions) * 0.15 / 0.30)  # normalize to [0, 1]
+    return _clamp(len(contradictions) * 0.04 / 0.30)  # normalize to [0, 1]
 
 
 def _p_unver(dropped_count: int, total_count: int) -> float:

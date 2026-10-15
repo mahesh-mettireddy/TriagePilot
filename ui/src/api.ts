@@ -2,12 +2,19 @@ import {
   AuditChainEntry,
   HumanDecision,
   InvestigationCreateRequest,
+  ReadinessStatus,
   ReportOutput,
   ScenarioMeta,
   SSEEvent,
 } from './types';
 
 const API_BASE = '/api';
+
+export async function getReadiness(): Promise<ReadinessStatus> {
+  const res = await fetch('/readyz');
+  if (!res.ok) throw new Error('Failed to fetch readiness');
+  return res.json();
+}
 
 export async function getScenarios(): Promise<ScenarioMeta[]> {
   const res = await fetch(`${API_BASE}/scenarios`);
@@ -24,6 +31,17 @@ export async function getProfile(): Promise<Record<string, any>> {
 export async function getEvalResults(): Promise<Record<string, any>> {
   const res = await fetch(`${API_BASE}/eval/results`);
   if (!res.ok) throw new Error('Failed to load eval results');
+  return res.json();
+}
+
+export async function runEvaluationSuite(
+  executionMode: 'live_evaluation' | 'replay_evaluation' = 'live_evaluation'
+): Promise<Record<string, any>> {
+  const res = await fetch(
+    `${API_BASE}/eval/run?execution_mode=${encodeURIComponent(executionMode)}`,
+    { method: 'POST' }
+  );
+  if (!res.ok) throw new Error('Failed to run evaluation benchmark');
   return res.json();
 }
 

@@ -235,8 +235,30 @@ export interface AuditChainEntry {
 
 export interface ScenarioMeta {
   id: string;
+  order?: number;
+  severity?: Severity;
+  module?: string;
+  ticket_id?: string;
+  created_at?: string;
+  channel?: string;
+  product_hint?: string;
   title: string;
   ticket_class: TicketClass;
   tags: string[];
   description: string;
+  ticket_text?: string;
+  attachments?: string[];
+  default_steer?: string;
+  default_client_reply?: string;
+}
+
+export interface ReadinessStatus {
+  status: string;
+  ai_mode: string;
+  ai_configured: boolean;
+  execution_mode: string;
+  ai_ready: boolean;
+  persistence: string;
+  persistence_ready: boolean;
+  audit: string;
 }
