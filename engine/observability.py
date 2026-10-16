@@ -55,6 +55,8 @@ class CloudJsonFormatter(logging.Formatter):
             "provider",
             "model",
             "latency_ms",
+            "tokens",
+            "cost_usd",
             "outcome",
             "fallback",
             "error",
@@ -91,10 +93,13 @@ def emit_log(
     provider: str | None = None,
     model: str | None = None,
     latency_ms: int | None = None,
+    tokens: int | None = None,
+    cost_usd: float | None = None,
     outcome: str | None = None,
     fallback: bool = False,
     error: str | None = None,
     level: int = logging.INFO,
+    **kwargs: Any,
 ) -> None:
     extra = {
         "investigation_id": investigation_id,
@@ -103,9 +108,12 @@ def emit_log(
         "provider": provider,
         "model": model,
         "latency_ms": latency_ms,
+        "tokens": tokens,
+        "cost_usd": cost_usd,
         "outcome": outcome,
         "fallback": fallback,
         "error": error,
+        **kwargs,
     }
     logger.log(level, _safe(message), extra=extra)
 

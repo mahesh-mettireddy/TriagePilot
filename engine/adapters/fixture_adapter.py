@@ -267,7 +267,53 @@ class FixtureKnowledgeAdapter(KnowledgePort):
 
     def __init__(self) -> None:
         raw = _load_json(_FIXTURES_DIR / "docs.json", _FALLBACK_DOCS)
-        self._pages: list[dict] = raw.get("pages", _FALLBACK_DOCS["pages"])
+        self._pages: list[dict] = list(raw.get("pages", _FALLBACK_DOCS["pages"]))
+        existing_ids = {p.get("page_id") for p in self._pages}
+        extra_pages = [
+            {
+                "page_id": "DOC-LIMITS-01",
+                "title": "Transfer Limits and Risk Controls Policy",
+                "summary": "Describes daily cumulative transfer limits and boundary rules (1,00,000 / 100000).",
+                "last_updated": "2026-07-20T14:00:00Z",
+                "space": "RISK_CONTROLS",
+                "sections": {
+                    "daily_limits": (
+                        "The daily cumulative transfer limit for standard retail accounts is INR 1,00,000 (100000.0). "
+                        "Transfers strictly exceeding this limit (> 100000.0) are blocked with DailyLimitExceededException. "
+                        "Transfers equal to INR 1,00,000 are permitted and must not be rejected."
+                    ),
+                },
+            },
+            {
+                "page_id": "DOC-FEES-01",
+                "title": "Fee Schedule and Tier Calculation Guide",
+                "summary": "Describes standard 1.25% transfer fee calculation and Decimal rounding rules.",
+                "last_updated": "2026-08-01T12:00:00Z",
+                "space": "BILLING",
+                "sections": {
+                    "standard_tier": (
+                        "The standard tier transfer fee is strictly 1.25% (0.0125) of the principal transfer amount, "
+                        "rounded to 2 decimal places using financial Decimal arithmetic to prevent IEEE-754 float drift."
+                    ),
+                },
+            },
+            {
+                "page_id": "DOC-IDEMPOTENCY-01",
+                "title": "API Idempotency Standards",
+                "summary": "Describes duplicate debit prevention and case-insensitive Idempotency-Key locking.",
+                "last_updated": "2026-05-10T11:00:00Z",
+                "space": "ARCHITECTURE",
+                "sections": {
+                    "header_spec": (
+                        "Mutating transfer endpoints accept an Idempotency-Key header. Header and cache key lookup "
+                        "must be case-insensitive with an atomic lock before ledger debit to prevent duplicate charges."
+                    ),
+                },
+            },
+        ]
+        for ep in extra_pages:
+            if ep["page_id"] not in existing_ids:
+                self._pages.append(ep)
 
     def search_docs(self, query: str, limit: int = 5) -> list[dict[str, Any]]:
         import re as _re

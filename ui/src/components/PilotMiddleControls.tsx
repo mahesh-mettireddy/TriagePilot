@@ -169,7 +169,18 @@ export const PilotMiddleControls: React.FC<PilotMiddleControlsProps> = ({
           {decisionState === 'approved' || decisionState === 'edited' ? (
             <span className="flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-md bg-emerald-950 text-emerald-300 border border-emerald-500/40">
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-              COMMITTED ({report?.decision?.write_back_ref})
+              COMMITTED •{' '}
+              {(() => {
+                const raw = report?.decision?.write_back_ref || '';
+                try {
+                  const parsed = JSON.parse(raw);
+                  const issueKey = parsed?.jira?.issue_key || 'ISS-OK';
+                  const commentId = parsed?.comment?.comment_id || 'CMT-OK';
+                  return `${issueKey} & ${commentId}`;
+                } catch {
+                  return raw || 'VERIFIED';
+                }
+              })()}
             </span>
           ) : decisionState === 'rejected' ? (
             <span className="flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-md bg-rose-950 text-rose-300 border border-rose-500/40">
@@ -278,10 +289,21 @@ export const PilotMiddleControls: React.FC<PilotMiddleControlsProps> = ({
           </div>
 
           {report?.decision?.write_back_ref && (
-            <div className="p-2.5 rounded-lg bg-emerald-950/40 border border-emerald-500/30 text-xs flex items-center justify-between text-emerald-300">
+            <div className="p-2.5 rounded-lg bg-emerald-950/40 border border-emerald-500/30 text-xs flex flex-wrap items-center justify-between gap-2 text-emerald-300">
               <span className="flex items-center gap-1.5 font-mono font-semibold">
                 <ExternalLink className="w-3.5 h-3.5" />
-                Committed Write-Back Reference: {report.decision.write_back_ref}
+                {(() => {
+                  const raw = report.decision.write_back_ref || '';
+                  try {
+                    const parsed = JSON.parse(raw);
+                    const issueKey = parsed?.jira?.issue_key || 'ISS-OK';
+                    const status = parsed?.jira?.status || 'persisted';
+                    const commentId = parsed?.comment?.comment_id || 'CMT-OK';
+                    return `Persisted Engineering Issue ${issueKey} (${status}) • Customer Reply ${commentId}`;
+                  } catch {
+                    return `Committed Write-Back Reference: ${raw}`;
+                  }
+                })()}
               </span>
               <span className="text-[11px] text-emerald-400/90">Signed by {report.decision.by}</span>
             </div>

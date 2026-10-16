@@ -244,8 +244,10 @@ class EvaluationScenarioResult(BaseModel):
     injection_blocked: Optional[bool] = None
     trust_score: float = 0.0
     trust_band: DecisionBand = DecisionBand.LOW
+    policy_action: Optional[str] = None
     abstention: bool = False
     latency_ms: int = 0
+    tokens: int = 0
     cost_usd: float = 0.0
     false_conclusion: bool = False
     provider: str = "none"

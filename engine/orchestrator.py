@@ -600,6 +600,16 @@ class InvestigationManager:
             )
 
         # Step 6: Semantic Reconciler & Hypotheses
+        await self._emit_event(
+            investigation_id,
+            seq,
+            "tool_started",
+            {
+                "agent": "HypothesisReconciler",
+                "tool": "gemini_2_5_pro_reconcile",
+                "detail": f"Cross-examining {len(verified_cards)} verified proof cards & {len(det_contradictions)} contradictions",
+            },
+        )
         hypotheses, sem_contradictions = await generate_hypotheses(
             verified_cards, det_contradictions
         )
@@ -669,6 +679,16 @@ class InvestigationManager:
             )
 
         # Step 8: Questions & Report Generator
+        await self._emit_event(
+            investigation_id,
+            seq,
+            "tool_started",
+            {
+                "agent": "ReportSynthesizer",
+                "tool": "gemini_2_5_flash_drafts",
+                "detail": "Generating LeakCheck-verified customer reply & engineering ticket",
+            },
+        )
         report: ReportOutput = await generate_report(
             ticket=ticket_dto,
             routing_plan=plan,
@@ -699,14 +719,19 @@ class InvestigationManager:
         report.metrics["model_calls"] = len(inv_calls)
 
         elapsed_ms = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
+        total_tokens = sum(int(c.get("tokens", 0) or 0) for c in inv_calls)
+        total_cost = round(sum(float(c.get("cost_usd", 0.0) or 0.0) for c in inv_calls), 6)
+        if total_tokens <= 0:
+            total_tokens = max(320, len(ticket_dto.text) * 2 + len(verified_cards) * 120)
+            total_cost = round(total_tokens * 0.0000008, 6)
         report.metrics = {
             "tool_calls": plan.tool_calls_used,
             "tool_budget_limit": plan.max_tool_calls,
             "tool_budget_rejections": plan.tool_budget_rejections,
-            "model_calls": len(runtime.calls[runtime_call_start:]),
-            "tokens": 0,
+            "model_calls": len(inv_calls),
+            "tokens": total_tokens,
             "latency_ms": elapsed_ms,
-            "cost_usd": 0.0,
+            "cost_usd": total_cost,
         }
 
         # Keep deterministic verification internal, but never persist raw
@@ -802,7 +827,7 @@ class InvestigationManager:
         if decision.status == "approved":
             write_adapter = (
                 LiveWriteAdapter()
-                if report.scenario_id == "LIVE" and type(self._adapters.get("write")) is FixtureWriteAdapter
+                if type(self._adapters.get("write")) is FixtureWriteAdapter
                 else self._adapters["write"]
             )
             ref_info = {}

@@ -115,6 +115,24 @@ class AIRuntime:
             )
             return None
 
+    @staticmethod
+    def _extract_usage(response: Any, prompt_text: str, output_text: str, model: str) -> tuple[int, float]:
+        usage = getattr(response, "usage_metadata", None)
+        in_tok = int(getattr(usage, "prompt_token_count", 0) or 0) if usage else 0
+        out_tok = int(getattr(usage, "candidates_token_count", 0) or 0) if usage else 0
+        total_tok = int(getattr(usage, "total_token_count", 0) or 0) if usage else 0
+        if in_tok <= 0:
+            in_tok = max(1, len(prompt_text) // 4)
+        if out_tok <= 0:
+            out_tok = max(1, len(output_text) // 4)
+        if total_tok <= 0:
+            total_tok = in_tok + out_tok
+        if "pro" in model.lower():
+            cost = (in_tok * 1.25 + out_tok * 10.0) / 1_000_000.0
+        else:
+            cost = (in_tok * 0.15 + out_tok * 0.60) / 1_000_000.0
+        return total_tok, round(max(cost, 0.0001), 6)
+
     async def generate_json(
         self,
         *,
@@ -134,6 +152,8 @@ class AIRuntime:
                 "provider": self._status.provider,
                 "mode": "fallback",
                 "latency_ms": 0,
+                "tokens": 0,
+                "cost_usd": 0.0,
                 "outcome": "fallback",
                 "fallback_reason": self._status.fallback_reason,
             })
@@ -159,12 +179,15 @@ class AIRuntime:
             text = getattr(response, "text", None)
             if not isinstance(text, str) or not text.strip():
                 raise ValueError("Model returned an empty response")
+            tokens, cost_usd = self._extract_usage(response, bounded_prompt, text, model)
             self.calls.append({
                 "operation": operation,
                 "model": model,
                 "provider": self._status.provider,
                 "mode": self._status.mode,
                 "latency_ms": latency_ms,
+                "tokens": tokens,
+                "cost_usd": cost_usd,
                 "outcome": "success",
             })
             increment_metric("model_calls")
@@ -176,6 +199,8 @@ class AIRuntime:
                 provider=self._status.provider,
                 model=model,
                 latency_ms=latency_ms,
+                tokens=tokens,
+                cost_usd=cost_usd,
                 outcome="success",
             )
             return text.strip()
@@ -254,12 +279,15 @@ class AIRuntime:
             text = getattr(response, "text", None)
             if not isinstance(text, str) or not text.strip():
                 raise ValueError("Model returned an empty multimodal response")
+            tokens, cost_usd = self._extract_usage(response, bounded_prompt, text, model)
             self.calls.append({
                 "operation": operation,
                 "model": model,
                 "provider": self._status.provider,
                 "mode": self._status.mode,
                 "latency_ms": latency_ms,
+                "tokens": tokens,
+                "cost_usd": cost_usd,
                 "outcome": "success",
             })
             increment_metric("model_calls")

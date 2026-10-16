@@ -1067,6 +1067,41 @@ export const CockpitScreen: React.FC = () => {
                 COLUMN 2: STEP 2 — HOW THE BACKEND INVESTIGATED (lg:col-span-5)
                =============================================================== */}
             <div className="lg:col-span-5 space-y-4">
+              {/* Live Backend Activity Ticker during active investigation */}
+              {isInvestigating && (
+                <div className="rounded-xl border border-amber-500/40 bg-amber-950/30 p-3.5 text-xs space-y-1.5 shadow-lg">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-amber-300 uppercase tracking-wider flex items-center gap-2">
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-400" />
+                      Backend Pipeline Executing Live
+                    </span>
+                    <span className="font-mono text-[10px] px-2 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-500/40 font-bold">
+                      {events.length} SSE EVENTS
+                    </span>
+                  </div>
+                  <p className="text-[11px] font-mono text-amber-100/90 truncate">
+                    {(() => {
+                      const last = events[events.length - 1];
+                      if (!last) return 'Initializing PII scrubber & prompt injection shield...';
+                      if (last.type === 'masking_done') return 'Stage 01 • PII scrubbed; classifying ticket with Vertex AI gemini-2.5-flash...';
+                      if (last.type === 'plan_created' || last.type === 'adk_orchestration')
+                        return `Stage 02–03 • Routing to ADK ParallelAgent swarm (${last.data?.active_agents?.length || 4} specialists)...`;
+                      if (last.type === 'tool_started')
+                        return `Stage 03–08 • ${last.data?.agent || 'Engine'} executing ${last.data?.tool || 'operation'}${last.data?.detail ? ` — ${last.data.detail}` : ''}...`;
+                      if (last.type === 'verifier_result')
+                        return `Stage 04 • Python Verifier validated ${last.data?.verified_count ?? 0} proof cards (${last.data?.dropped_count ?? 0} dropped)...`;
+                      if (last.type === 'contradiction_found')
+                        return `Stage 05 • 4-Way Reconciler flagged ${last.data?.kind || 'contradiction'}...`;
+                      if (last.type === 'hypothesis_update')
+                        return 'Stage 06–07 • Hypotheses ranked; computing deterministic Trust Score...';
+                      if (last.type === 'trust_update')
+                        return 'Stage 08 • Synthesizing LeakCheck-safe customer reply & Jira ticket...';
+                      return `Active event: ${last.type}`;
+                    })()}
+                  </p>
+                </div>
+              )}
+
               {/* High-Visibility Prompt Injection Quarantined Banner */}
               {hasInjection && (
                 <div className="rounded-xl border border-rose-500/50 bg-rose-950/40 p-3.5 text-xs space-y-1 shadow-lg">
@@ -1178,9 +1213,11 @@ export const CockpitScreen: React.FC = () => {
 
                 {inspectorTab === 'models' && (
                   <div className="space-y-2 text-xs">
-                    <div className="flex items-center justify-between text-[11px] font-mono text-slate-400">
-                      <span>Execution Mode: <strong className="text-emerald-300">{report?.execution?.mode?.toUpperCase() || 'LIVE'}</strong></span>
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono text-slate-400">
+                      <span>Mode: <strong className="text-emerald-300">{report?.execution?.mode?.toUpperCase() || 'LIVE'}</strong></span>
                       <span>Provider: <strong className="text-teal-300">{report?.execution?.provider || 'vertex_ai'}</strong></span>
+                      <span>Tokens: <strong className="text-slate-200">{report?.metrics?.tokens ?? 0}</strong></span>
+                      <span>Cost: <strong className="text-emerald-300">${(report?.metrics?.cost_usd ?? 0).toFixed(4)}</strong></span>
                     </div>
                     {report?.execution?.calls && report.execution.calls.length > 0 ? (
                       <div className="space-y-1.5">
@@ -1191,7 +1228,7 @@ export const CockpitScreen: React.FC = () => {
                           >
                             <span className="text-slate-200 font-semibold">{c.operation}</span>
                             <span className="text-teal-300">
-                              {c.model} • {c.latency_ms ?? 0}ms
+                              {c.model} {c.tokens ? `• ${c.tokens} tok ` : ''}• {c.latency_ms ?? 0}ms
                             </span>
                           </div>
                         ))}
@@ -1221,6 +1258,20 @@ export const CockpitScreen: React.FC = () => {
                 COLUMN 3: STEP 3 — VERIFIED VERDICT, DRAFTS & PROOF (lg:col-span-4)
                =============================================================== */}
             <div className="lg:col-span-4 space-y-4">
+              {isInvestigating && !report && (
+                <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 shadow-xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-mono text-[10px] font-bold">
+                      STEP 3 • VERIFYING
+                    </span>
+                    <span className="font-mono text-[10px] text-slate-400">Awaiting Verifier &amp; Trust Gate</span>
+                  </div>
+                  <p className="text-xs text-slate-300 leading-relaxed">
+                    Verifying Git commit SHAs, AST line numbers, log timestamps, and runbook sections before unlocking root-cause verdict and drafts...
+                  </p>
+                </div>
+              )}
+
               {/* 1. Verified Root-Cause Verdict (Hero Outcome Card at Top!) */}
               {report && (
                 <div className="bg-slate-900/90 border border-teal-500/40 rounded-xl p-4 shadow-xl space-y-3">

@@ -262,7 +262,7 @@ async def _llm_hypotheses(
         }
         if hasattr(types, "ThinkingConfig"):
             try:
-                config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=512)
+                config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=128)
             except Exception:
                 pass
 

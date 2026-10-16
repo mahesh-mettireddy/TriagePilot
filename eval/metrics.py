@@ -96,6 +96,7 @@ def compute_scenario_metrics(
         "abstention": abstention,
         "false_conclusion": false_conclusion,
         "latency_ms": report.metrics.get("latency_ms", 0),
+        "tokens": report.metrics.get("tokens", 0),
         "cost_usd": report.metrics.get("cost_usd", 0.0),
         "provider": report.execution.provider,
         "models": list(report.execution.models),
@@ -121,6 +122,7 @@ def aggregate_benchmark_metrics(scenario_results: List[Dict[str, Any]]) -> Dict[
             "class_match_rate": 0.0,
             "abstention_rate": 0.0,
             "mean_latency_ms": 0,
+            "total_tokens": 0,
             "estimated_cost_usd": 0.0,
             "failed_scenarios": 0,
             "scenarios_evaluated": 0,
@@ -145,6 +147,7 @@ def aggregate_benchmark_metrics(scenario_results: List[Dict[str, Any]]) -> Dict[
     abstentions = sum(1 for r in scenario_results if r.get("abstention"))
     errors = sum(1 for r in scenario_results if r.get("status") == "error" or r.get("error"))
     mean_latency = sum(r.get("latency_ms", 0) for r in scenario_results) / total
+    total_tokens = sum(r.get("tokens", 0) for r in scenario_results)
     total_cost = sum(r.get("cost_usd", 0.0) for r in scenario_results)
 
     return {
@@ -159,6 +162,7 @@ def aggregate_benchmark_metrics(scenario_results: List[Dict[str, Any]]) -> Dict[
         "class_match_rate": round(class_matches / total, 3),
         "abstention_rate": round(abstentions / total, 3),
         "mean_latency_ms": round(mean_latency),
+        "total_tokens": total_tokens,
         "estimated_cost_usd": round(total_cost, 6),
         "failed_scenarios": errors,
     }
