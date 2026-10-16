@@ -367,7 +367,12 @@ class Planner:
                 sig in lower
                 for sig in (
                     "cutoff",
+                    "same-day transfer",
+                    "immediately rejected",
                     "duplicate debit",
+                    "charged twice",
+                    "both debited",
+                    "duplicate",
                     "debited twice",
                     "idempotency",
                     "sms",

@@ -340,9 +340,8 @@ async def _llm_hypotheses(
         if hypotheses and fallback_hyps:
             primary = hypotheses[0]
             fb_primary = fallback_hyps[0]
-            if fb_primary.culprit_files:
-                merged_files = list(dict.fromkeys(list(primary.culprit_files) + list(fb_primary.culprit_files)))
-                primary.culprit_files = merged_files
+            if not primary.culprit_files and fb_primary.culprit_files:
+                primary.culprit_files = list(fb_primary.culprit_files[:1])
             if not primary.culprit_commit and fb_primary.culprit_commit:
                 primary.culprit_commit = fb_primary.culprit_commit
 
