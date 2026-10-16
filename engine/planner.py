@@ -346,11 +346,51 @@ class Planner:
             raw = re.sub(r"\s*```$", "", raw)
 
             data = json.loads(raw)
-            ticket_class = TicketClass(data.get("ticket_class", "CODE_DEFECT"))
-            severity = Severity(data.get("severity", "P3"))
             parsed = PlannerLLMOutput.model_validate(data)
             entities = self._sanitize_entities(parsed.extracted_entities)
-            return parsed.ticket_class, parsed.severity, entities
+            kw_class, kw_sev, kw_entities = self._keyword_classify(text)
+
+            # Deterministically merge regex-extracted entities so TXN IDs, timestamps,
+            # and amounts are never dropped by model output variability.
+            for key in ("transaction_ids", "timestamps_utc", "amounts", "error_codes"):
+                merged = list(
+                    dict.fromkeys(
+                        list(kw_entities.get(key, [])) + list(entities.get(key, []))
+                    )
+                )
+                entities[key] = merged
+
+            # Reconcile LLM classification with deterministic domain policy rules
+            # (Neuro-Symbolic Router: Gemini extracts semantics; Python enforces domain boundaries)
+            lower = text.lower()
+            has_explicit_code_signal = any(
+                sig in lower
+                for sig in (
+                    "cutoff",
+                    "duplicate debit",
+                    "debited twice",
+                    "idempotency",
+                    "sms",
+                    "daily limit",
+                    "dailylimitexceeded",
+                    "cutoff_exceeded",
+                    "blocked at",
+                )
+            )
+            if kw_class in {
+                TicketClass.SECURITY_SENSITIVE,
+                TicketClass.KNOWN_ERROR,
+                TicketClass.HOW_TO_USER_ERROR,
+                TicketClass.INSUFFICIENT_INFO,
+                TicketClass.DATA_ISSUE,
+            }:
+                final_class = kw_class
+            elif has_explicit_code_signal:
+                final_class = TicketClass.CODE_DEFECT
+            else:
+                final_class = parsed.ticket_class
+
+            return final_class, parsed.severity or kw_sev, entities
 
         except Exception as exc:
             logger.warning("LLM classification failed (%s) — using keyword fallback", exc)

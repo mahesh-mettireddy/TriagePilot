@@ -90,9 +90,9 @@ async def run_scenario_eval(
     req = InvestigationCreateRequest(scenario_id=scenario_id, mode=mode)  # type: ignore[arg-type]
     inv_id = await manager.start_investigation(req)
 
-    # Wait for investigation to finish (wait for report)
+    # Wait for investigation to finish (up to 45s for live Vertex AI model calls)
     report = None
-    for _ in range(60):
+    for _ in range(450):
         report = manager.get_report(inv_id)
         if report is not None:
             break
@@ -131,28 +131,31 @@ async def run_all_evals(
 ) -> Dict[str, Any]:
     if execution_mode not in {"live_evaluation", "replay_evaluation"}:
         raise ValueError("execution_mode must be live_evaluation or replay_evaluation")
-    results = []
     scenario_mode = "replay" if execution_mode == "replay_evaluation" else "live"
-    for sc_id in GOLDEN_SCENARIOS_TRUTH:
-        try:
-            res = await run_scenario_eval(sc_id, mode=scenario_mode)
-            results.append(res)
-        except Exception as exc:
-            results.append({
-                "scenario_id": sc_id,
-                "status": "error",
-                "error": str(exc),
-                "evidence_count": 0,
-                "verified_cards_count": 0,
-                "dropped_cards_count": 0,
-                "root_cause_hit": False,
-                "class_match": False,
-                "citation_validity": 0.0,
-                "abstention": False,
-                "false_conclusion": False,
-                "latency_ms": 0,
-                "cost_usd": 0.0,
-            })
+    sem = asyncio.Semaphore(4)
+
+    async def _run_one(sc_id: str) -> Dict[str, Any]:
+        async with sem:
+            try:
+                return await run_scenario_eval(sc_id, mode=scenario_mode)
+            except Exception as exc:
+                return {
+                    "scenario_id": sc_id,
+                    "status": "error",
+                    "error": str(exc),
+                    "evidence_count": 0,
+                    "verified_cards_count": 0,
+                    "dropped_cards_count": 0,
+                    "root_cause_hit": False,
+                    "class_match": False,
+                    "citation_validity": 0.0,
+                    "abstention": False,
+                    "false_conclusion": False,
+                    "latency_ms": 0,
+                    "cost_usd": 0.0,
+                }
+
+    results = list(await asyncio.gather(*(_run_one(sc_id) for sc_id in GOLDEN_SCENARIOS_TRUTH)))
 
     aggregate = aggregate_benchmark_metrics(results)
     models = sorted({model for result in results for model in result.get("models", [])})

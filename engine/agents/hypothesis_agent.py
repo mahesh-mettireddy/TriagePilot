@@ -219,9 +219,9 @@ async def _llm_hypotheses(
     if not runtime.status.configured:
         return _fallback_hypotheses(verified_cards, contradictions)
 
-    # Fast-path: if there are no code or log cards (e.g. HOW_TO_USER_ERROR),
-    # use deterministic builder immediately.
-    if not any(c.source_type in {SourceType.CODE, SourceType.LOG} for c in verified_cards):
+    # Fast-path: if there are no verified CODE cards (e.g. HOW_TO_USER_ERROR,
+    # KNOWN_ERROR, INSUFFICIENT_INFO), use deterministic builder immediately.
+    if not any(c.source_type == SourceType.CODE for c in verified_cards):
         return _fallback_hypotheses(verified_cards, contradictions)
 
     try:
@@ -298,11 +298,14 @@ async def _llm_hypotheses(
             if not supporting:
                 logger.warning("Dropping hypothesis %s: no verified supporting card IDs", h.get("hypothesis_id"))
                 continue
+            raw_commit = h.get("culprit_commit")
+            if isinstance(raw_commit, str) and raw_commit.strip().lower() in ("", "null", "none"):
+                raw_commit = None
             hypotheses.append(Hypothesis(
                 hypothesis_id=h.get("hypothesis_id", f"H{len(hypotheses)+1}"),
                 statement=h.get("statement", ""),
                 culprit_files=h.get("culprit_files", []),
-                culprit_commit=h.get("culprit_commit"),
+                culprit_commit=raw_commit,
                 supporting_card_ids=supporting,
                 contradicting_card_ids=contradicting,
                 score=float(h.get("score", 0.5)),
@@ -327,9 +330,26 @@ async def _llm_hypotheses(
                 note=sc.get("note", ""),
             ))
 
+        fallback_hyps, fallback_contras = _fallback_hypotheses(verified_cards, contradictions)
         if not hypotheses and verified_cards:
-            fallback_hyps, fallback_contras = _fallback_hypotheses(verified_cards, contradictions)
             return fallback_hyps, semantic_contras or fallback_contras
+
+        # Deterministically backfill culprit_files, culprit_commit, and doc-vs-code
+        # BEHAVIOUR_MISMATCH from verified evidence pointers if omitted by the LLM.
+        hypotheses = sorted(hypotheses, key=lambda h: h.score, reverse=True)
+        if hypotheses and fallback_hyps:
+            primary = hypotheses[0]
+            fb_primary = fallback_hyps[0]
+            if fb_primary.culprit_files:
+                merged_files = list(dict.fromkeys(list(primary.culprit_files) + list(fb_primary.culprit_files)))
+                primary.culprit_files = merged_files
+            if not primary.culprit_commit and fb_primary.culprit_commit:
+                primary.culprit_commit = fb_primary.culprit_commit
+
+        existing_pairs = {(c.card_a, c.card_b) for c in semantic_contras}
+        for fc in fallback_contras:
+            if (fc.card_a, fc.card_b) not in existing_pairs and (fc.card_b, fc.card_a) not in existing_pairs:
+                semantic_contras.append(fc)
 
         return hypotheses, semantic_contras
 
