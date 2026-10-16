@@ -78,6 +78,8 @@ export const CockpitScreen: React.FC = () => {
   const [draftTab, setDraftTab] = useState<'reply' | 'jira'>('reply');
   const [evidenceFilter, setEvidenceFilter] = useState<'all' | 'primary' | 'supports' | 'contradicts' | 'dropped'>('all');
   const [sourceFilter, setSourceFilter] = useState<string>('all');
+  const [inspectorTab, setInspectorTab] = useState<'swarm' | 'trace' | 'models'>('swarm');
+  const [showAllTenStages, setShowAllTenStages] = useState<boolean>(false);
 
   // Live Service Connector state
   const [liveStatus, setLiveStatus] = useState<Record<string, any> | null>(null);
@@ -87,6 +89,14 @@ export const CockpitScreen: React.FC = () => {
   const [isTriggeringLive, setIsTriggeringLive] = useState(false);
   const [isSyncingRepo, setIsSyncingRepo] = useState(false);
   const [a2aStatusBadge, setA2aStatusBadge] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isInvestigating) {
+      setInspectorTab('trace');
+    } else if (report) {
+      setInspectorTab('swarm');
+    }
+  }, [isInvestigating, Boolean(report)]);
 
   const refreshLiveStatus = async () => {
     try {
@@ -413,29 +423,29 @@ export const CockpitScreen: React.FC = () => {
 
     return {
       client: {
-        title: '1. Client Claim',
-        badge: timeMismatch ? 'TIME_MISMATCH' : 'INGESTED',
+        title: '🗣️ 1. What Customer Claimed',
+        badge: timeMismatch ? 'TIME MISMATCH' : 'INGESTED',
         badgeColor: timeMismatch ? 'text-amber-300 bg-amber-950 border-amber-500/40' : 'text-sky-300 bg-sky-950 border-sky-500/30',
         detail: timeMismatch
           ? timeMismatch.note
           : `Ticket ${report.ticket_id} classified as ${report.ticket_class} (${report.severity}).`,
       },
       telemetry: {
-        title: '2. Logs & Ledger State',
-        badge: logOrRecCard ? `${logOrRecCard.card_id} VERIFIED` : 'PRUNED',
+        title: '📋 2. What Logs & Ledger Show',
+        badge: logOrRecCard ? `${logOrRecCard.card_id} VERIFIED` : 'SKIPPED',
         badgeColor: logOrRecCard ? 'text-emerald-300 bg-emerald-950 border-emerald-500/40' : 'text-slate-400 bg-slate-900 border-slate-700',
-        detail: logOrRecCard ? logOrRecCard.claim : 'Skipped by dynamic router (not required for this ticket class).',
+        detail: logOrRecCard ? logOrRecCard.claim : 'Pruned by smart router (not needed for this ticket class).',
       },
       code: {
-        title: '3. Pinned Git AST',
-        badge: codeCard ? `${codeCard.pointer?.path?.split('/').pop() || 'CODE'} VERIFIED` : 'PRUNED',
+        title: '💻 3. What Git Code Actually Runs',
+        badge: codeCard ? `${(codeCard.pointer?.file || codeCard.pointer?.path || 'CODE').split('/').pop()} VERIFIED` : 'SKIPPED',
         badgeColor: codeCard ? 'text-teal-300 bg-teal-950 border-teal-500/40' : 'text-slate-400 bg-slate-900 border-slate-700',
         detail: codeCard
-          ? `${codeCard.claim} (${codeCard.pointer?.path}:${codeCard.pointer?.line_start}@${String(codeCard.pointer?.sha || '').slice(0, 7)})`
-          : 'Skipped by dynamic router (fast-path or insufficient info).',
+          ? `${codeCard.claim} (${codeCard.pointer?.file || codeCard.pointer?.path}:${codeCard.pointer?.line_start}@${String(codeCard.pointer?.commit_sha || codeCard.pointer?.sha || '').slice(0, 7)})`
+          : 'Pruned by smart router (fast-path or insufficient info).',
       },
       docs: {
-        title: '4. Runbooks & History',
+        title: '📖 4. What Runbook & Docs Promise',
         badge: docMismatch ? docMismatch.kind : docOrHistCard ? `${docOrHistCard.card_id} VERIFIED` : 'CHECKED',
         badgeColor: docMismatch
           ? 'text-amber-300 bg-amber-950 border-amber-500/40'
@@ -449,6 +459,48 @@ export const CockpitScreen: React.FC = () => {
     };
   }, [report]);
 
+  // 5 High-Level Macro Phases for effortless comprehension
+  const macroPhases = useMemo(() => {
+    const s = pipelineStages;
+    return [
+      {
+        num: '1',
+        title: 'Privacy & Security Shield',
+        sub: 'Scrubs PII & blocks prompt injection',
+        done: s[0]?.done,
+        active: isInvestigating && !s[0]?.done,
+      },
+      {
+        num: '2',
+        title: 'Smart Agent Router',
+        sub: 'Selects needed specialists (max 12 calls)',
+        done: s[1]?.done && s[2]?.done,
+        active: isInvestigating && s[0]?.done && !s[2]?.done,
+      },
+      {
+        num: '3',
+        title: 'Python Proof Verifier',
+        sub: 'Validates Git SHAs, line numbers & logs',
+        done: s[3]?.done && s[4]?.done,
+        active: isInvestigating && s[2]?.done && !s[4]?.done,
+      },
+      {
+        num: '4',
+        title: '4-Way Cross-Check & Trust',
+        sub: 'Catches doc/code drift & scores trust',
+        done: s[5]?.done && s[6]?.done && s[7]?.done,
+        active: isInvestigating && s[4]?.done && !s[7]?.done,
+      },
+      {
+        num: '5',
+        title: 'Human Gate & SHA-256 Audit',
+        sub: 'Seals ledger & awaits operator sign-off',
+        done: s[8]?.done,
+        active: isInvestigating && s[7]?.done && !s[8]?.done,
+      },
+    ];
+  }, [pipelineStages, isInvestigating]);
+
   const severityBadgeClass = (sev?: string) => {
     if (sev === 'P1') return 'bg-rose-950/90 text-rose-300 border-rose-500/40';
     if (sev === 'P2') return 'bg-amber-950/90 text-amber-300 border-amber-500/40';
@@ -458,117 +510,149 @@ export const CockpitScreen: React.FC = () => {
 
   return (
     <div className="space-y-4">
-      {/* Top 10-Stage Neuro-Symbolic Execution Strip */}
-      <div className="bg-slate-900/90 border border-slate-800/90 rounded-xl px-4 py-3 shadow-xl">
-        <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
+      {/* Top 5-Phase Live Backend Progress Bar (with expandable 10-stage detail) */}
+      <div className="bg-slate-900/90 border border-slate-800/90 rounded-xl px-4 py-3 shadow-xl space-y-2.5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <Sparkles className="w-4 h-4 text-teal-400" />
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-200">
-              10-Stage Verifiable Triage Pipeline
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-100">
+              Live Backend Execution Pipeline
             </span>
-            <span className="hidden sm:inline text-[11px] text-slate-400 font-mono">
-              — Gemini 2.5 Proposes • Deterministic Python Verifies
+            <span className="hidden md:inline text-[11px] text-slate-400">
+              — Gemini 2.5 Proposes • Deterministic Python Verifies Every Citation
             </span>
           </div>
 
-          <div className="flex items-center gap-3 text-[11px] font-mono">
+          <div className="flex items-center gap-2.5 text-[11px] font-mono">
             {isInvestigating && (
-              <span className="flex items-center gap-1.5 text-teal-300 bg-teal-950/80 px-2.5 py-0.5 rounded border border-teal-500/30">
+              <span className="flex items-center gap-1.5 text-teal-300 bg-teal-950/80 px-2.5 py-0.5 rounded border border-teal-500/30 font-bold">
                 <RefreshCw className="w-3 h-3 animate-spin" />
-                Running: {(elapsedMs / 1000).toFixed(1)}s
+                Investigating ({(elapsedMs / 1000).toFixed(1)}s)...
               </span>
             )}
             {report?.metrics && (
-              <div className="flex items-center gap-2.5 text-slate-300 bg-slate-950 px-3 py-1 rounded-lg border border-slate-800">
+              <div className="hidden sm:flex items-center gap-2 text-slate-300 bg-slate-950 px-2.5 py-1 rounded-lg border border-slate-800">
                 <span>
-                  Tools: <strong className="text-teal-300">{report.metrics.tool_calls}/{report.metrics.tool_budget_limit || 12}</strong>
+                  Tool Calls: <strong className="text-teal-300">{report.metrics.tool_calls}/{report.metrics.tool_budget_limit || 12}</strong>
                 </span>
-                <span className="text-slate-700">|</span>
+                <span className="text-slate-700">•</span>
                 <span>
-                  Latency: <strong className="text-slate-100">{(report.metrics.latency_ms / 1000).toFixed(2)}s</strong>
-                </span>
-                <span className="text-slate-700">|</span>
-                <span>
-                  SHA-256: <strong className="text-teal-400">{(report.report_hash || '').slice(0, 10)}</strong>
+                  Time: <strong className="text-slate-100">{(report.metrics.latency_ms / 1000).toFixed(1)}s</strong>
                 </span>
               </div>
             )}
+            <button
+              onClick={() => setShowAllTenStages((prev) => !prev)}
+              className="px-2 py-1 rounded bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800 text-[10px]"
+            >
+              {showAllTenStages ? 'Hide 10 Granular Stages' : 'View All 10 Stages'}
+            </button>
           </div>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-5 lg:grid-cols-10 gap-1.5">
-          {pipelineStages.map((s, idx) => {
-            const prevDone = idx === 0 || pipelineStages[idx - 1].done;
-            const isCurrent = isInvestigating && !s.done && prevDone;
-            return (
-              <div
-                key={s.step}
-                className={`px-2.5 py-1.5 rounded-lg border text-[10px] font-mono flex items-center gap-1.5 transition-all ${
-                  s.done
-                    ? 'bg-teal-950/75 border-teal-500/45 text-teal-200 font-semibold shadow-sm shadow-teal-950/50'
-                    : isCurrent
-                      ? 'bg-amber-950/60 border-amber-400/50 text-amber-200 font-semibold animate-pulse'
-                      : 'bg-slate-950/60 border-slate-800/80 text-slate-500'
+        {/* 5 Intuitive Macro Phases */}
+        <div className="grid grid-cols-1 sm:grid-cols-5 gap-2">
+          {macroPhases.map((p) => (
+            <div
+              key={p.num}
+              className={`px-3 py-2 rounded-lg border transition-all flex items-center gap-2.5 ${
+                p.done
+                  ? 'bg-teal-950/60 border-teal-500/40 text-slate-100'
+                  : p.active
+                  ? 'bg-amber-950/60 border-amber-400/50 text-amber-100 animate-pulse'
+                  : 'bg-slate-950/50 border-slate-800/80 text-slate-500'
+              }`}
+            >
+              <span
+                className={`w-5 h-5 rounded-full text-[10px] font-black flex items-center justify-center shrink-0 ${
+                  p.done
+                    ? 'bg-teal-400 text-slate-950'
+                    : p.active
+                    ? 'bg-amber-400 text-slate-950'
+                    : 'bg-slate-800 text-slate-400'
                 }`}
               >
-                <span
-                  className={`w-4 h-4 rounded-full text-[9px] flex items-center justify-center shrink-0 ${
+                {p.done ? '✓' : p.num}
+              </span>
+              <div className="min-w-0">
+                <div className="text-[11px] font-bold truncate">{p.title}</div>
+                <div className="text-[10px] text-slate-400 truncate">{p.sub}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Optional Expandable 10-Stage Technical Strip */}
+        {showAllTenStages && (
+          <div className="grid grid-cols-2 sm:grid-cols-5 lg:grid-cols-10 gap-1.5 pt-2 border-t border-slate-800/80">
+            {pipelineStages.map((s, idx) => {
+              const prevDone = idx === 0 || pipelineStages[idx - 1].done;
+              const isCurrent = isInvestigating && !s.done && prevDone;
+              return (
+                <div
+                  key={s.step}
+                  className={`px-2 py-1 rounded border text-[10px] font-mono flex items-center gap-1 ${
                     s.done
-                      ? 'bg-teal-400 text-slate-950 font-black'
+                      ? 'bg-teal-950/80 border-teal-500/40 text-teal-200'
                       : isCurrent
-                        ? 'bg-amber-400 text-slate-950 font-black'
-                        : 'bg-slate-800 text-slate-400'
+                      ? 'bg-amber-950/60 border-amber-400/50 text-amber-200 animate-pulse'
+                      : 'bg-slate-950/60 border-slate-800 text-slate-500'
                   }`}
                 >
-                  {s.done ? '✓' : s.step}
-                </span>
-                <span className="truncate">{s.label}</span>
-              </div>
-            );
-          })}
-        </div>
+                  <span className="font-bold">{s.done ? '✓' : s.step}</span>
+                  <span className="truncate">{s.label}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Main 3-Column Command Center Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-        {/* COLUMN 1: Ticket Ingestion Queue & Custom Composer (lg:col-span-3) */}
+        {/* ===================================================================
+            COLUMN 1: STEP 1 — SELECT OR TRIGGER INCIDENT (lg:col-span-3)
+           =================================================================== */}
         <div className="lg:col-span-3 space-y-4">
-          {/* Ticket Queue & Intake Mode Switcher */}
           <div className="bg-slate-900/90 border border-slate-800/90 rounded-xl p-4 shadow-xl space-y-3">
+            {/* Step 1 Header */}
             <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
-              <div className="flex items-center gap-1.5">
-                <Inbox className="w-4 h-4 text-teal-400" />
-                <span className="font-bold text-xs uppercase tracking-wider text-slate-200">
-                  Incident Ingestion
+              <div className="flex items-center gap-2">
+                <span className="px-2 py-0.5 rounded bg-teal-500/20 text-teal-300 border border-teal-500/30 font-mono text-[10px] font-bold">
+                  STEP 1
+                </span>
+                <span className="font-bold text-xs uppercase tracking-wider text-slate-100">
+                  Select Incident
                 </span>
               </div>
+            </div>
 
-              <div className="flex items-center bg-slate-950 p-0.5 rounded-lg border border-slate-800 text-[10px] font-semibold">
-                <button
-                  onClick={() => setIntakeMode('queue')}
-                  className={`px-2 py-1 rounded transition-colors ${
-                    intakeMode === 'queue' ? 'bg-teal-600 text-white' : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  Queue ({scenarios.length})
-                </button>
-                <button
-                  onClick={handleSwitchToLive}
-                  className={`px-2 py-1 rounded flex items-center gap-1 transition-colors ${
-                    intakeMode === 'live' ? 'bg-teal-600 text-white' : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  <GitCommit className="w-3 h-3" /> Live Service
-                </button>
-                <button
-                  onClick={handleSwitchToCustom}
-                  className={`px-2 py-1 rounded flex items-center gap-1 transition-colors ${
-                    intakeMode === 'custom' ? 'bg-teal-600 text-white' : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  <PlusCircle className="w-3 h-3" /> Custom
-                </button>
-              </div>
+            {/* Clean 3-Way Intake Mode Switcher */}
+            <div className="grid grid-cols-3 gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800 text-[11px] font-semibold">
+              <button
+                onClick={() => setIntakeMode('queue')}
+                className={`py-1.5 rounded-md transition-colors ${
+                  intakeMode === 'queue' ? 'bg-teal-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                Queue ({scenarios.length})
+              </button>
+              <button
+                onClick={handleSwitchToLive}
+                className={`py-1.5 rounded-md flex items-center justify-center gap-1 transition-colors ${
+                  intakeMode === 'live' ? 'bg-teal-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Radio className="w-3 h-3" /> Live App
+              </button>
+              <button
+                onClick={handleSwitchToCustom}
+                className={`py-1.5 rounded-md flex items-center justify-center gap-1 transition-colors ${
+                  intakeMode === 'custom' ? 'bg-teal-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <PlusCircle className="w-3 h-3" /> Custom
+              </button>
             </div>
 
             {intakeMode === 'queue' ? (
@@ -581,26 +665,24 @@ export const CockpitScreen: React.FC = () => {
                       type="text"
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      placeholder="Filter tickets..."
+                      placeholder="Search incidents..."
                       className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-8 pr-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-teal-500"
                     />
                   </div>
-                  <div className="relative">
-                    <select
-                      value={sortBy}
-                      onChange={(e) => setSortBy(e.target.value as any)}
-                      aria-label="Sort ticket queue"
-                      className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-[11px] font-mono text-slate-300 focus:outline-none focus:border-teal-500"
-                    >
-                      <option value="order">Sort: #1 → #8</option>
-                      <option value="severity">Sort: P1 → P4</option>
-                      <option value="class">Sort: Class</option>
-                    </select>
-                  </div>
+                  <select
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value as any)}
+                    aria-label="Sort ticket queue"
+                    className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-[11px] font-mono text-slate-300 focus:outline-none focus:border-teal-500"
+                  >
+                    <option value="order">#1 → #8</option>
+                    <option value="severity">P1 → P4</option>
+                    <option value="class">By Type</option>
+                  </select>
                 </div>
 
                 {/* Sorted Ticket Queue List */}
-                <div className="space-y-1.5 max-h-[300px] overflow-y-auto pr-1">
+                <div className="space-y-1.5 max-h-[280px] overflow-y-auto pr-1">
                   {sortedScenarios.map((sc) => {
                     const isSelected = sc.id === selectedScenarioId && intakeMode === 'queue';
                     return (
@@ -609,21 +691,21 @@ export const CockpitScreen: React.FC = () => {
                         onClick={() => handleScenarioSelect(sc)}
                         className={`w-full text-left p-2.5 rounded-xl text-xs transition-all border ${
                           isSelected
-                            ? 'bg-teal-950/75 text-slate-100 border-teal-500/50 shadow-md shadow-teal-950/50'
+                            ? 'bg-teal-950/75 text-slate-100 border-teal-500/60 shadow-md shadow-teal-950/50'
                             : 'bg-slate-950/60 text-slate-300 hover:bg-slate-800/50 border-slate-800/80'
                         }`}
                       >
                         <div className="flex items-center justify-between gap-1.5 mb-1">
                           <div className="flex items-center gap-1.5">
                             <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-900 text-teal-400 border border-slate-700">
-                              #{sc.order || sc.id} · {sc.ticket_id || sc.id}
+                              #{sc.order || sc.id}
                             </span>
                             <span className={`font-mono text-[9px] font-bold px-1.5 py-0.5 rounded border ${severityBadgeClass(sc.severity)}`}>
                               {sc.severity || 'P2'}
                             </span>
                           </div>
                           <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-slate-900 text-slate-400 border border-slate-800 uppercase">
-                            {sc.module || sc.product_hint || 'core'}
+                            {sc.module || 'core'}
                           </span>
                         </div>
 
@@ -634,7 +716,7 @@ export const CockpitScreen: React.FC = () => {
                         <div className="flex items-center justify-between gap-1 text-[10px] font-mono text-slate-400">
                           <span>{sc.ticket_class}</span>
                           {sc.attachments && sc.attachments.length > 0 && (
-                            <span className="text-teal-300">📎 Vision OCR</span>
+                            <span className="text-teal-300">📎 Screenshot OCR</span>
                           )}
                         </div>
                       </button>
@@ -647,7 +729,7 @@ export const CockpitScreen: React.FC = () => {
                 <div className="flex items-center justify-between">
                   <span className="font-bold text-teal-300 uppercase text-[10px] flex items-center gap-1.5">
                     <Radio className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
-                    Live Service & Git Telemetry Bridge
+                    Live Code &amp; Payment Bridge
                   </span>
                   <button
                     onClick={handleSyncLiveRepo}
@@ -655,42 +737,38 @@ export const CockpitScreen: React.FC = () => {
                     className="px-2 py-0.5 rounded bg-slate-900 hover:bg-slate-800 border border-slate-700 text-[10px] font-mono text-teal-300 flex items-center gap-1"
                   >
                     <RefreshCw className={`w-2.5 h-2.5 ${isSyncingRepo ? 'animate-spin' : ''}`} />
-                    Sync Repo
+                    Sync Code
                   </button>
                 </div>
 
                 {/* Live Git Workspace Status */}
                 <div className="p-2 rounded-lg bg-slate-900/90 border border-slate-800 space-y-1 font-mono text-[10px]">
                   <div className="flex items-center justify-between">
-                    <span className="text-slate-400">Target Repo (`transfers-demo-app`):</span>
+                    <span className="text-slate-400">Repo (`transfers-demo-app`):</span>
                     <span className="text-teal-300 font-bold">
                       @{liveStatus?.git_workspace?.short_sha || '288c17a'}
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-slate-400">Workspace State:</span>
+                    <span className="text-slate-400">Code Status:</span>
                     {liveStatus?.git_workspace?.has_live_changes ? (
                       <span className="px-1.5 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-500/40 font-bold">
-                        LIVE CODE DIFF DETECTED ({liveStatus.git_workspace.live_modified_files.length} file)
+                        ⚡ LIVE CODE EDIT ({liveStatus.git_workspace.live_modified_files.length} file)
                       </span>
                     ) : (
-                      <span className="text-emerald-400">Baseline Synced</span>
+                      <span className="text-emerald-400">Clean Baseline</span>
                     )}
                   </div>
                   {liveStatus?.git_workspace?.live_modified_files &&
                     liveStatus.git_workspace.live_modified_files.length > 0 && (
                       <div className="text-amber-300 truncate pt-0.5">
-                        Modified: {liveStatus.git_workspace.live_modified_files.join(', ')}
+                        Changed: {liveStatus.git_workspace.live_modified_files.join(', ')}
                       </div>
                     )}
                 </div>
 
                 {/* Live Service Transaction Execution */}
                 <div className="space-y-1.5 pt-1 border-t border-slate-800/80">
-                  <div className="text-[10px] font-semibold text-slate-300 flex items-center justify-between">
-                    <span>Execute Live Service Request</span>
-                    <span className="font-mono text-[9px] text-slate-400">Emits JSONL Logs + Record</span>
-                  </div>
                   <div className="grid grid-cols-2 gap-1.5">
                     <div>
                       <label className="text-[9px] font-mono text-slate-400 block mb-0.5">Amount (INR)</label>
@@ -702,14 +780,14 @@ export const CockpitScreen: React.FC = () => {
                       />
                     </div>
                     <div>
-                      <label className="text-[9px] font-mono text-slate-400 block mb-0.5">UTC Window</label>
+                      <label className="text-[9px] font-mono text-slate-400 block mb-0.5">Time Window</label>
                       <select
                         value={liveWindow}
                         onChange={(e) => setLiveWindow(e.target.value as '10' | '16')}
                         className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-[11px] font-mono text-slate-100"
                       >
-                        <option value="10">10:15 UTC (Active Window)</option>
-                        <option value="16">16:15 UTC (Pre-17:00 Cutoff)</option>
+                        <option value="10">10:15 UTC (Open)</option>
+                        <option value="16">16:15 UTC (Cutoff)</option>
                       </select>
                     </div>
                   </div>
@@ -719,7 +797,7 @@ export const CockpitScreen: React.FC = () => {
                     className="w-full py-1.5 px-2.5 rounded-lg bg-slate-900 hover:bg-teal-950/80 border border-teal-500/40 text-teal-300 font-semibold text-[11px] flex items-center justify-center gap-1.5 transition-colors"
                   >
                     <Zap className="w-3.5 h-3.5 text-amber-400" />
-                    {isTriggeringLive ? 'Executing Live Transfer Service...' : 'Trigger Live Payment Request & Populate Ticket'}
+                    {isTriggeringLive ? 'Running Live Payment...' : '1. Run Live Payment & Generate Ticket'}
                   </button>
                 </div>
 
@@ -740,7 +818,7 @@ export const CockpitScreen: React.FC = () => {
                     <div className="text-slate-400 truncate">
                       {liveTxResult.error_message
                         ? `${liveTxResult.error_type}: ${liveTxResult.error_message}`
-                        : `Charged Fee: INR ${Number(liveTxResult.fee || 0).toFixed(2)}`}
+                        : `Fee Charged: INR ${Number(liveTxResult.fee || 0).toFixed(2)}`}
                     </div>
                   </div>
                 )}
@@ -749,131 +827,68 @@ export const CockpitScreen: React.FC = () => {
               <div className="p-2.5 rounded-lg bg-slate-950/90 border border-teal-500/30 space-y-2 text-xs">
                 <div className="flex items-center justify-between">
                   <span className="font-bold text-teal-300 uppercase text-[10px]">
-                    Direct Custom Ticket Intake
+                    Custom Support Ticket
                   </span>
                   <select
                     value={customModule}
                     onChange={(e) => setCustomModule(e.target.value)}
                     className="bg-slate-900 border border-slate-700 rounded px-2 py-0.5 text-[10px] font-mono text-slate-200"
                   >
-                    <option value="transfers">module: transfers</option>
-                    <option value="fees">module: fees</option>
-                    <option value="notifications">module: notifications</option>
-                    <option value="limits">module: limits</option>
-                    <option value="settlement">module: settlement</option>
+                    <option value="transfers">transfers</option>
+                    <option value="fees">fees</option>
+                    <option value="notifications">notifications</option>
+                    <option value="limits">limits</option>
+                    <option value="settlement">settlement</option>
                   </select>
                 </div>
                 <p className="text-[11px] text-slate-400 leading-relaxed">
-                  Paste any customer support ticket, transaction ID, or stack symptom below to run live Vertex AI routing and deterministic verification.
+                  Type or paste any customer complaint below to run live 4-way verification.
                 </p>
               </div>
             )}
-          </div>
 
-          {/* Active Ticket Payload & Pre-Flight Security Scanner */}
-          <div className="bg-slate-900/90 border border-slate-800/90 rounded-xl p-4 shadow-xl space-y-3">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-              <span className="font-bold text-xs uppercase tracking-wider text-slate-200 flex items-center gap-1.5">
-                <Terminal className="w-3.5 h-3.5 text-teal-400" />
-                {intakeMode === 'live'
-                  ? 'Live Service Incident Payload'
-                  : intakeMode === 'custom'
-                  ? 'Custom Payload'
-                  : `Ticket ${selectedScenario?.ticket_id || selectedScenarioId}`}
-              </span>
-              {intakeMode === 'queue' && selectedScenario?.created_at && (
-                <span className="text-[10px] font-mono text-slate-400">
-                  {new Date(selectedScenario.created_at).toLocaleString([], {
-                    month: 'short',
-                    day: 'numeric',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
-                </span>
-              )}
-            </div>
-
-            {intakeMode === 'queue' && selectedScenario && (
-              <div className="p-2.5 rounded-lg bg-slate-950/90 border border-slate-800 space-y-1.5">
-                <div className="flex items-center justify-between gap-1 flex-wrap">
-                  <span className="text-[10px] font-mono font-bold text-teal-400 uppercase">
-                    Verification Scope
+            {/* Customer Ticket Text Box */}
+            <div className="pt-2 border-t border-slate-800 space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-[10px] uppercase font-bold text-slate-300">
+                  Customer Complaint Text:
+                </label>
+                {preflightScan.accountCount > 0 && (
+                  <span className="text-[10px] font-mono text-emerald-400 flex items-center gap-1">
+                    <ShieldCheck className="w-3 h-3" />
+                    {preflightScan.accountCount} PII Masked
                   </span>
-                  <div className="flex flex-wrap gap-1">
-                    {selectedScenario.tags?.map((t) => (
-                      <span
-                        key={t}
-                        className="px-1.5 py-0.5 rounded bg-slate-900 text-[9px] font-mono text-slate-300 border border-slate-800"
-                      >
-                        {t}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-                <p className="text-[11px] text-slate-300 leading-relaxed">
-                  {selectedScenario.description}
-                </p>
+                )}
               </div>
-            )}
-
-            <div>
-              <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">
-                Raw Unmasked Customer Ticket Text:
-              </label>
               <textarea
                 value={ticketText}
                 onChange={(e) => setTicketText(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs text-slate-100 focus:outline-none focus:border-teal-500 font-sans min-h-[125px] leading-relaxed"
+                className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs text-slate-100 focus:outline-none focus:border-teal-500 font-sans min-h-[105px] leading-relaxed"
                 placeholder="Paste customer incident ticket..."
               />
-            </div>
-
-            {/* Live Pre-Flight PII & Injection Detection Preview */}
-            <div className="p-2.5 rounded-lg bg-slate-950/90 border border-slate-800 space-y-1.5">
-              <div className="flex items-center justify-between text-[10px] font-mono">
-                <span className="text-slate-400 uppercase font-bold flex items-center gap-1">
-                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                  Pre-LLM Gate Preview
-                </span>
-                <span className="text-emerald-400">STAGE 01 ACTIVE</span>
-              </div>
-              <div className="flex flex-wrap gap-1.5 text-[10px] font-mono">
-                <span className="px-2 py-0.5 rounded bg-slate-900 text-slate-300 border border-slate-800">
-                  PII Accounts: <strong className="text-teal-300">{preflightScan.accountCount}</strong>
-                </span>
-                {preflightScan.txnRefs.length > 0 && (
-                  <span className="px-2 py-0.5 rounded bg-slate-900 text-slate-300 border border-slate-800">
-                    Refs: <strong className="text-teal-300">{preflightScan.txnRefs.join(', ')}</strong>
-                  </span>
-                )}
-                {preflightScan.hasInjection && (
-                  <span className="px-2 py-0.5 rounded bg-rose-950 text-rose-300 border border-rose-500/40 font-bold">
-                    ⚠️ Prompt Injection Override Detected
-                  </span>
-                )}
-              </div>
+              {preflightScan.hasInjection && (
+                <div className="px-2.5 py-1.5 rounded-lg bg-rose-950/80 border border-rose-500/40 text-[10px] font-mono text-rose-300 font-bold">
+                  🛡️ Prompt Injection Detected — Will be quarantined before AI
+                </div>
+              )}
             </div>
 
             {/* Multimodal Attachment Thumbnail (e.g. S06 screenshot.png) */}
             {intakeMode === 'queue' && selectedScenario?.attachments && selectedScenario.attachments.length > 0 && (
-              <div className="p-2.5 rounded-lg bg-slate-950 border border-teal-500/35 space-y-1.5">
+              <div className="p-2 rounded-lg bg-slate-950 border border-teal-500/35 space-y-1.5">
                 <div className="flex items-center justify-between text-[10px] font-mono">
-                  <span className="text-teal-300 font-bold">
-                    📎 Attached UI Screenshot
-                  </span>
-                  <span className="px-1.5 py-0.5 rounded bg-teal-950 text-teal-300 border border-teal-500/30">
-                    Gemini 2.5 Flash Vision
-                  </span>
+                  <span className="text-teal-300 font-bold">📎 Attached Error Screenshot</span>
+                  <span className="text-slate-400">Gemini Vision OCR</span>
                 </div>
                 <img
                   src={`/api/bundles/${selectedScenario.id}/attachments/${selectedScenario.attachments[0]}`}
                   alt="Attached customer error screenshot"
-                  className="w-full rounded border border-slate-800 max-h-40 object-contain bg-slate-900"
+                  className="w-full rounded border border-slate-800 max-h-32 object-contain bg-slate-900"
                 />
               </div>
             )}
 
-            {/* Launch Button */}
+            {/* Primary CTA Button */}
             <button
               onClick={() => handleStartInvestigation()}
               disabled={isInvestigating || !ticketText.trim()}
@@ -882,32 +897,29 @@ export const CockpitScreen: React.FC = () => {
               {isInvestigating ? (
                 <>
                   <RefreshCw className="w-4 h-4 animate-spin" />
-                  Executing Autonomous Pipeline ({(elapsedMs / 1000).toFixed(1)}s)...
+                  Investigating Live ({(elapsedMs / 1000).toFixed(1)}s)...
                 </>
               ) : (
                 <>
                   <Play className="w-4 h-4 fill-white" />
-                  Run Autonomous Triage (
-                  {intakeMode === 'live'
-                    ? 'LIVE'
-                    : intakeMode === 'custom'
-                    ? 'CUSTOM'
-                    : selectedScenario?.ticket_id || selectedScenarioId}
-                  )
+                  Analyze Incident ({intakeMode === 'live' ? 'LIVE' : intakeMode === 'custom' ? 'CUSTOM' : selectedScenario?.ticket_id || selectedScenarioId})
                 </>
               )}
             </button>
 
-            {/* Google A2A Protocol Delegation Action */}
-            <button
-              onClick={handleDelegateViaA2A}
-              disabled={isInvestigating || !ticketText.trim()}
-              className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-700/80 text-slate-300 font-mono text-[11px] transition-colors disabled:opacity-50"
-              title="Delegate investigation via Google A2A (Agent2Agent) JSON-RPC 2.0 Protocol"
-            >
-              <Network className="w-3.5 h-3.5 text-teal-400" />
-              Delegate via Google A2A Protocol (`tasks/send`)
-            </button>
+            {/* Subtle Secondary A2A Delegation Action */}
+            <div className="flex items-center justify-between pt-1">
+              <span className="text-[10px] text-slate-500">External Agent Interop:</span>
+              <button
+                onClick={handleDelegateViaA2A}
+                disabled={isInvestigating || !ticketText.trim()}
+                className="text-[10px] font-mono text-teal-400 hover:text-teal-300 flex items-center gap-1 disabled:opacity-50"
+                title="Delegate via Google A2A JSON-RPC 2.0 Protocol"
+              >
+                <Network className="w-3 h-3" />
+                Run via A2A Protocol →
+              </button>
+            </div>
 
             {a2aStatusBadge && (
               <div className="p-2 rounded-lg bg-teal-950/60 border border-teal-500/40 text-[10px] font-mono text-teal-200 flex items-center justify-between">
@@ -918,396 +930,553 @@ export const CockpitScreen: React.FC = () => {
           </div>
         </div>
 
-        {/* COLUMN 2: Provenance, 4-Way Matrix, Specialist Swarm, Stream & Maker-Checker (lg:col-span-5) */}
-        <div className="lg:col-span-5 space-y-4">
-          {/* AI Execution Provenance Bar */}
-          {report?.execution && (
-            <div className="rounded-xl border border-emerald-500/30 bg-slate-900/95 p-3.5 text-xs shadow-lg space-y-2">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <Cpu className="w-4 h-4 text-teal-400" />
-                  <span className="font-bold uppercase tracking-wider text-slate-100">
-                    Runtime Execution Provenance
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 font-mono text-[10px]">
-                  <span className="px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-500/40 font-bold">
-                    {report.execution.mode.toUpperCase()}
-                  </span>
-                  <span className="px-2 py-0.5 rounded bg-slate-950 text-teal-300 border border-slate-800">
-                    {report.execution.calls?.length || 0} Model Call(s)
-                  </span>
-                </div>
-              </div>
-
-              {report.execution.calls && report.execution.calls.length > 0 && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-1">
-                  {report.execution.calls.map((c: any, idx: number) => (
-                    <div
-                      key={idx}
-                      className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-slate-950/90 border border-slate-800/90 font-mono text-[10px]"
-                    >
-                      <span className="text-slate-300 truncate">{c.operation}</span>
-                      <span className="text-teal-300 shrink-0">
-                        {c.model?.replace('gemini-', '')} • {c.latency_ms ?? 0}ms
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* High-Visibility Prompt Injection Quarantined Banner */}
-          {hasInjection && (
-            <div className="rounded-xl border border-rose-500/50 bg-rose-950/40 p-3.5 text-xs space-y-1.5 shadow-lg shadow-rose-950/30">
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-rose-300 uppercase tracking-wider flex items-center gap-1.5">
-                  <AlertCircle className="w-4 h-4 text-rose-400" />
-                  Adversarial Prompt Injection Quarantined
-                </span>
-                <span className="font-mono text-[10px] px-2 py-0.5 rounded bg-rose-950 text-rose-300 border border-rose-500/40 font-bold">
-                  NEUTRALIZED STAGE 01
-                </span>
-              </div>
-              <p className="text-[11px] text-rose-200/90 leading-relaxed">
-                {report?.routing_plan?.injection_note ||
-                  'Untrusted instruction override detected in ticket or log stream and replaced with [INJECTION_QUARANTINED] before model ingestion.'}
-              </p>
-            </div>
-          )}
-
-          {/* Dynamic Specialist Router Bar */}
-          <RouterBar
-            routingPlan={report?.routing_plan}
-            activeAgents={report?.routing_plan?.active_agents}
-          />
-
-          {/* 4-Way Reality Cross-Examination Matrix */}
-          {fourWaySummary && (
-            <div className="bg-slate-900/90 border border-slate-800/90 rounded-xl p-4 shadow-xl space-y-2.5">
-              <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-                <span className="font-bold text-xs uppercase tracking-wider text-slate-200 flex items-center gap-1.5">
-                  <Layers className="w-4 h-4 text-teal-400" />
-                  4-Way Reality Cross-Examination Matrix
-                </span>
-                <span className="text-[10px] font-mono text-slate-400">
-                  Client vs Logs vs Git AST vs Runbooks
-                </span>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                {Object.values(fourWaySummary).map((quad, idx) => (
-                  <div
-                    key={idx}
-                    className="p-2.5 rounded-lg bg-slate-950/90 border border-slate-800/90 space-y-1"
-                  >
-                    <div className="flex items-center justify-between gap-1">
-                      <span className="text-[11px] font-bold text-slate-200">{quad.title}</span>
-                      <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded border ${quad.badgeColor}`}>
-                        {quad.badge}
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-slate-400 leading-snug line-clamp-2">
-                      {quad.detail}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Real-Time Pipeline Stream */}
-          <TimelineStream
-            events={events}
-            contradictions={report?.contradictions}
-            isStreaming={isInvestigating}
-          />
-
-          {/* Context-Aware Pilot-in-the-Middle Controls */}
-          <PilotMiddleControls
-            report={report}
-            investigationId={investigationId}
-            selectedScenario={selectedScenario}
-            onDecisionSubmitted={(updated) => setReport(updated)}
-            onSimulateReply={handleSimulateReply}
-            onDevSteer={handleDevSteer}
-            isStreaming={isInvestigating}
-          />
-        </div>
-
-        {/* COLUMN 3: Trust Score, Root-Cause Verdict, Sortable Evidence Board & Output Drafts (lg:col-span-4) */}
-        <div className="lg:col-span-4 space-y-4">
-          {/* Mathematical Trust Meter */}
-          <TrustMeter trust={report?.trust} />
-
-          {/* Probable Root Cause Hypothesis & Executive Summary */}
-          {report && (
-            <div className="bg-slate-900/90 border border-slate-800/90 rounded-xl p-4 shadow-xl space-y-3">
-              <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-                <span className="font-bold text-xs uppercase tracking-wider text-slate-200 flex items-center gap-1.5">
-                  <GitCommit className="w-4 h-4 text-teal-400" />
-                  {report.probable_root_cause ? 'Verified Root-Cause Verdict' : 'Triage Resolution Summary'}
-                </span>
-                <div className="flex items-center gap-1.5">
-                  <span className="font-mono text-[10px] px-2 py-0.5 rounded bg-slate-950 text-slate-300 border border-slate-800">
-                    {report.owner_team}
-                  </span>
-                  {report.probable_root_cause && (
-                    <span className="font-mono text-xs font-bold text-teal-300 bg-teal-950 px-2 py-0.5 rounded border border-teal-500/30">
-                      {(report.probable_root_cause.score * 100).toFixed(0)}% Match
+        {/* ===================================================================
+            COLUMNS 2 & 3: GUIDED IDLE OVERVIEW OR LIVE INVESTIGATION RESULTS
+           =================================================================== */}
+        {!report && !isInvestigating ? (
+          <div className="lg:col-span-9 space-y-4">
+            <div className="bg-slate-900/90 border border-slate-800/90 rounded-2xl p-6 shadow-xl space-y-6">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-5">
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    <span className="px-2.5 py-0.5 rounded-md bg-teal-950 text-teal-300 border border-teal-500/30 font-mono text-xs font-bold">
+                      READY TO INVESTIGATE
                     </span>
-                  )}
-                </div>
-              </div>
-
-              {report.probable_root_cause ? (
-                <>
-                  <p className="text-xs font-semibold text-slate-100 leading-relaxed bg-slate-950 p-3 rounded-lg border border-teal-500/25">
-                    {report.probable_root_cause.statement}
-                  </p>
-                  <div className="grid grid-cols-1 gap-1.5 text-xs font-mono bg-slate-950/70 p-2.5 rounded-lg border border-slate-800">
-                    {report.probable_root_cause.culprit_files?.length > 0 && (
-                      <div className="text-[11px] flex items-center justify-between gap-2">
-                        <span className="text-slate-500">Culprit File:</span>
-                        <span className="text-teal-300 font-semibold truncate">
-                          {report.probable_root_cause.culprit_files.join(', ')}
-                        </span>
-                      </div>
-                    )}
-                    {report.probable_root_cause.culprit_commit && (
-                      <div className="text-[11px] flex items-center justify-between gap-2">
-                        <span className="text-slate-500">Pinned Commit:</span>
-                        <span className="text-emerald-300 font-semibold">
-                          {report.probable_root_cause.culprit_commit}
-                        </span>
-                      </div>
-                    )}
-                    {report.probable_root_cause.supporting_card_ids?.length > 0 && (
-                      <div className="text-[11px] flex items-center justify-between gap-2">
-                        <span className="text-slate-500">Cited Proof IDs:</span>
-                        <span className="text-slate-200">
-                          {report.probable_root_cause.supporting_card_ids.join(', ')}
-                        </span>
-                      </div>
-                    )}
+                    <span className="text-xs font-mono text-slate-400">
+                      Selected: {intakeMode === 'live' ? 'Live Payment Service' : `${selectedScenario?.ticket_id || selectedScenarioId} — ${selectedScenario?.title || ''}`}
+                    </span>
                   </div>
-                </>
-              ) : (
-                <p className="text-xs text-slate-200 leading-relaxed bg-slate-950 p-3 rounded-lg border border-slate-800 whitespace-pre-wrap">
-                  {report.summary}
-                </p>
-              )}
-
-              {report.workaround && (
-                <div className="p-2.5 rounded-lg bg-teal-950/40 border border-teal-500/30 text-[11px] text-teal-200">
-                  <strong className="uppercase text-[10px] text-teal-400 block mb-0.5">
-                    Immediate Verified Workaround:
-                  </strong>
-                  {report.workaround}
+                  <h2 className="text-xl font-bold text-slate-100">
+                    See How TriagePilot™ Verifies Root Causes Without Hallucinating
+                  </h2>
+                  <p className="text-xs text-slate-400 max-w-2xl leading-relaxed">
+                    {intakeMode === 'queue' && selectedScenario
+                      ? selectedScenario.description
+                      : 'Click "Analyze Incident" to cross-examine the customer claim against live logs, pinned Git source code, transaction records, and SOP runbooks.'}
+                  </p>
                 </div>
-              )}
 
-              {report.kb_gap && (
-                <div className="p-2.5 rounded-lg bg-amber-950/35 border border-amber-500/30 text-[11px] text-amber-200">
-                  <strong className="uppercase text-[10px] text-amber-400 block mb-0.5">
-                    Documentation Drift Flagged ({report.kb_gap.page_id}):
-                  </strong>
-                  {report.kb_gap.issue}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Sorted & Filterable Evidentiary Cards Board */}
-          <div className="bg-slate-900/90 border border-slate-800/90 rounded-xl p-4 shadow-xl space-y-3">
-            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-              <span className="font-bold text-xs uppercase tracking-wider text-slate-200 flex items-center gap-1.5">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                Verified Evidentiary Cards
-              </span>
-              <div className="flex items-center gap-2 text-[10px] font-mono">
-                <span className="px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-500/30 font-bold">
-                  {report?.verified_cards?.length || 0} Verified
-                </span>
-                <span className="px-2 py-0.5 rounded bg-rose-950 text-rose-300 border border-rose-500/30 font-bold">
-                  {report?.dropped_cards?.length || 0} Dropped
-                </span>
+                <button
+                  onClick={() => handleStartInvestigation()}
+                  disabled={!ticketText.trim()}
+                  className="shrink-0 flex items-center gap-2 px-5 py-3 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white font-bold text-xs shadow-lg shadow-teal-950/60 transition-all"
+                >
+                  <Play className="w-4 h-4 fill-white" />
+                  Analyze Selected Incident Now →
+                </button>
               </div>
-            </div>
 
-            {report && (
-              <div className="space-y-2">
-                {/* Status / Stance Filter Bar */}
-                <div className="flex flex-wrap items-center gap-1 text-[10px] font-mono">
+              {/* Quick-Pick Signature Scenarios for 1-Click Exploration */}
+              <div className="space-y-2.5">
+                <div className="text-xs font-bold uppercase tracking-wider text-slate-300">
+                  Or Try a 1-Click Signature Scenario:
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                   {[
-                    { id: 'all', label: `All (${(report.verified_cards?.length || 0) + (report.dropped_cards?.length || 0)})` },
-                    { id: 'primary', label: `Root-Cause (${primaryCardIds.size})` },
-                    { id: 'supports', label: 'Supports' },
-                    { id: 'contradicts', label: 'Contradicts' },
-                    { id: 'dropped', label: `Dropped (${report.dropped_cards?.length || 0})` },
-                  ].map((tab) => (
-                    <button
-                      key={tab.id}
-                      onClick={() => setEvidenceFilter(tab.id as any)}
-                      className={`px-2 py-1 rounded border transition-colors ${
-                        evidenceFilter === tab.id
-                          ? 'bg-teal-600 text-white border-teal-500 font-bold'
-                          : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-slate-200'
-                      }`}
-                    >
-                      {tab.label}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Source Type Filter Bar */}
-                <div className="flex flex-wrap items-center gap-1 text-[10px] font-mono">
-                  {['all', 'code', 'log', 'doc', 'record', 'visual', 'ticket'].map((src) => (
-                    <button
-                      key={src}
-                      onClick={() => setSourceFilter(src)}
-                      className={`px-2 py-0.5 rounded border uppercase transition-colors ${
-                        sourceFilter === src
-                          ? 'bg-slate-800 text-teal-300 border-teal-500/40 font-bold'
-                          : 'bg-slate-950/60 text-slate-500 border-slate-800/80 hover:text-slate-300'
-                      }`}
-                    >
-                      {src === 'all' ? 'All Sources' : src}
-                    </button>
-                  ))}
+                    {
+                      id: 'S01',
+                      badge: 'P1 • Timezone Bug',
+                      title: '4 PM Cutoff Rejection',
+                      desc: 'Customer claims failure since Monday 9 AM; logs & Git prove Tuesday 4:02 PM IST.',
+                    },
+                    {
+                      id: 'S06',
+                      badge: 'P2 • Vision OCR',
+                      title: 'Screenshot + Limit Bug',
+                      desc: 'Extracts TXN-6001 from PNG screenshot & pins >= boundary bug in daily_limit.py.',
+                    },
+                    {
+                      id: 'S04',
+                      badge: 'P2 • Stale Runbook',
+                      title: 'SMS Retry Drift + Injection',
+                      desc: 'Blocks log prompt injection & proves runbook DOC-SMS-01 contradicts sms.py.',
+                    },
+                    {
+                      id: 'S11',
+                      badge: 'P2 • Principled Abstain',
+                      title: 'Vague Ticket → 2-Turn Fix',
+                      desc: 'Abstains when evidence is weak (0.22), asks 2 questions, and resolves on reply.',
+                    },
+                  ].map((demo) => {
+                    const sc = scenarios.find((s) => s.id === demo.id);
+                    const isActive = selectedScenarioId === demo.id && intakeMode === 'queue';
+                    return (
+                      <div
+                        key={demo.id}
+                        onClick={() => {
+                          if (sc) handleScenarioSelect(sc);
+                        }}
+                        className={`cursor-pointer p-3.5 rounded-xl border transition-all flex flex-col justify-between space-y-2 ${
+                          isActive
+                            ? 'bg-teal-950/60 border-teal-500/60 shadow-md'
+                            : 'bg-slate-950/80 border-slate-800 hover:border-slate-700'
+                        }`}
+                      >
+                        <div className="space-y-1">
+                          <span className="text-[10px] font-mono font-bold text-teal-400">
+                            {demo.badge}
+                          </span>
+                          <div className="text-xs font-bold text-slate-100">{demo.title}</div>
+                          <p className="text-[11px] text-slate-400 leading-relaxed">{demo.desc}</p>
+                        </div>
+                        <span className="text-[10px] font-mono text-teal-300 font-semibold pt-1">
+                          {isActive ? '✓ Selected — Click Analyze above' : 'Select scenario →'}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
-            )}
 
-            <div className="space-y-2.5 max-h-[380px] overflow-y-auto pr-1">
-              {!report ? (
-                <div className="text-center py-10 text-slate-500 text-xs bg-slate-950/40 rounded-lg border border-slate-800/60">
-                  Run autonomous triage to collect and verify multi-source evidence pointers.
+              {/* 4-Step Visual Explanation of What Happens Behind the Scenes */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3 pt-2 border-t border-slate-800/80 text-xs">
+                <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 space-y-1">
+                  <div className="font-mono text-[10px] text-teal-400 font-bold">01. SCRUB &amp; ROUTE</div>
+                  <div className="font-bold text-slate-200">PII Masking &amp; Smart Pruning</div>
+                  <p className="text-[11px] text-slate-400 leading-relaxed">
+                    Redacts account numbers &amp; prompt injections before activating only needed ADK specialists.
+                  </p>
                 </div>
-              ) : sortedAndFilteredCards.length === 0 ? (
-                <div className="text-center py-6 text-slate-500 text-xs">
-                  No evidence cards match the selected filter.
+                <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 space-y-1">
+                  <div className="font-mono text-[10px] text-teal-400 font-bold">02. 4-WAY CHECK</div>
+                  <div className="font-bold text-slate-200">Client vs Logs vs Code vs Docs</div>
+                  <p className="text-[11px] text-slate-400 leading-relaxed">
+                    Cross-examines all 4 sources simultaneously to catch false timestamps and stale runbooks.
+                  </p>
                 </div>
-              ) : (
-                sortedAndFilteredCards.map((card) => (
-                  <EvidenceCardItem
-                    key={card.card_id}
-                    card={card}
-                    isPrimaryCitation={primaryCardIds.has(card.card_id)}
-                    onInspect={(c) => setInspectedCard(c)}
-                  />
-                ))
-              )}
+                <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 space-y-1">
+                  <div className="font-mono text-[10px] text-teal-400 font-bold">03. PYTHON VERIFIER</div>
+                  <div className="font-bold text-slate-200">Zero Hallucinated Citations</div>
+                  <p className="text-[11px] text-slate-400 leading-relaxed">
+                    Deterministic Python validates every 40-char Git commit SHA, line number, and log ID.
+                  </p>
+                </div>
+                <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 space-y-1">
+                  <div className="font-mono text-[10px] text-teal-400 font-bold">04. TRUST &amp; SIGN-OFF</div>
+                  <div className="font-bold text-slate-200">Math Trust Gate &amp; Maker-Checker</div>
+                  <p className="text-[11px] text-slate-400 leading-relaxed">
+                    Abstains if evidence is weak (&lt;0.45) and binds human approval to SHA-256 audit hashes.
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
-
-          {/* Customer-Safe Reply & Engineering Jira Bug Draft Viewer */}
-          {report && (
-            <div className="bg-slate-900/90 border border-slate-800/90 rounded-xl p-4 shadow-xl space-y-3">
-              <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-                <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800">
-                  <button
-                    onClick={() => setDraftTab('reply')}
-                    className={`px-2.5 py-1 rounded text-[11px] font-semibold transition-colors ${
-                      draftTab === 'reply'
-                        ? 'bg-teal-600 text-white'
-                        : 'text-slate-400 hover:text-slate-200'
-                    }`}
-                  >
-                    Customer Reply
-                  </button>
-                  <button
-                    onClick={() => setDraftTab('jira')}
-                    className={`px-2.5 py-1 rounded text-[11px] font-semibold transition-colors ${
-                      draftTab === 'jira'
-                        ? 'bg-teal-600 text-white'
-                        : 'text-slate-400 hover:text-slate-200'
-                    }`}
-                  >
-                    Jira Bug Draft
-                  </button>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <button
-                    onClick={handleCopyCustomerDraft}
-                    className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-mono flex items-center gap-1 transition-colors border border-slate-700"
-                  >
-                    {copiedDraft ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                    Copy Reply
-                  </button>
-                  <button
-                    onClick={handleCopyJira}
-                    className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-mono flex items-center gap-1 transition-colors border border-slate-700"
-                  >
-                    {copiedJira ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                    Copy Jira
-                  </button>
-                </div>
-              </div>
-
-              {draftTab === 'reply' ? (
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-[10px] uppercase font-bold text-slate-400">
-                      Sanitized Client Response:
+        ) : (
+          <>
+            {/* ===============================================================
+                COLUMN 2: STEP 2 — HOW THE BACKEND INVESTIGATED (lg:col-span-5)
+               =============================================================== */}
+            <div className="lg:col-span-5 space-y-4">
+              {/* High-Visibility Prompt Injection Quarantined Banner */}
+              {hasInjection && (
+                <div className="rounded-xl border border-rose-500/50 bg-rose-950/40 p-3.5 text-xs space-y-1 shadow-lg">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-rose-300 uppercase tracking-wider flex items-center gap-1.5">
+                      <AlertCircle className="w-4 h-4 text-rose-400" />
+                      Prompt Injection Attack Blocked
                     </span>
-                    <span
-                      className={`text-[9px] font-mono font-bold px-2 py-0.5 rounded border ${
-                        report.leak_check?.passed
-                          ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/40'
-                          : 'bg-rose-950/80 text-rose-300 border-rose-500/40'
+                    <span className="font-mono text-[10px] px-2 py-0.5 rounded bg-rose-950 text-rose-300 border border-rose-500/40 font-bold">
+                      STAGE 01 QUARANTINED
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-rose-200/90 leading-relaxed">
+                    {report?.routing_plan?.injection_note ||
+                      'Adversarial instruction override was neutralized with [INJECTION_QUARANTINED] before reaching Gemini.'}
+                  </p>
+                </div>
+              )}
+
+              {/* What Actually Happened: 4-Way Reality Cross-Check */}
+              {fourWaySummary && (
+                <div className="bg-slate-900/90 border border-slate-800/90 rounded-xl p-4 shadow-xl space-y-3">
+                  <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
+                    <div className="flex items-center gap-2">
+                      <span className="px-2 py-0.5 rounded bg-teal-500/20 text-teal-300 border border-teal-500/30 font-mono text-[10px] font-bold">
+                        STEP 2
+                      </span>
+                      <span className="font-bold text-xs uppercase tracking-wider text-slate-100">
+                        4-Way Reality Cross-Check
+                      </span>
+                    </div>
+                    <span className="text-[10px] font-mono text-slate-400">
+                      Client vs Logs vs Git vs Docs
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {Object.values(fourWaySummary).map((quad, idx) => (
+                      <div
+                        key={idx}
+                        className="p-3 rounded-lg bg-slate-950/90 border border-slate-800/90 space-y-1"
+                      >
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="text-[11px] font-bold text-slate-200">{quad.title}</span>
+                          <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded border ${quad.badgeColor}`}>
+                            {quad.badge}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-300 leading-snug line-clamp-2">
+                          {quad.detail}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Unified Tabbed Backend Execution Inspector (Swarm | Live Trace | AI Calls) */}
+              <div className="bg-slate-900/90 border border-slate-800/90 rounded-xl p-4 shadow-xl space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2.5">
+                  <span className="font-bold text-xs uppercase tracking-wider text-slate-200 flex items-center gap-1.5">
+                    <Cpu className="w-4 h-4 text-teal-400" />
+                    Backend Execution Inspector
+                  </span>
+
+                  <div className="flex items-center bg-slate-950 p-1 rounded-lg border border-slate-800 text-[11px] font-semibold">
+                    <button
+                      onClick={() => setInspectorTab('swarm')}
+                      className={`px-2.5 py-1 rounded transition-colors ${
+                        inspectorTab === 'swarm' ? 'bg-teal-600 text-white' : 'text-slate-400 hover:text-slate-200'
                       }`}
                     >
-                      LeakCheck: {report.leak_check?.passed ? 'PASSED (0 Internal Paths)' : 'FLAGGED'}
-                    </span>
-                  </div>
-                  <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 text-xs text-slate-200 leading-relaxed font-sans max-h-44 overflow-y-auto whitespace-pre-wrap">
-                    {report.customer_reply_draft}
+                      Agent Swarm ({report?.routing_plan?.active_agents?.length || 0}/5)
+                    </button>
+                    <button
+                      onClick={() => setInspectorTab('trace')}
+                      className={`px-2.5 py-1 rounded transition-colors flex items-center gap-1 ${
+                        inspectorTab === 'trace' ? 'bg-teal-600 text-white' : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      {isInvestigating && <span className="w-1.5 h-1.5 rounded-full bg-amber-300 animate-ping" />}
+                      Live Trace ({events.length})
+                    </button>
+                    <button
+                      onClick={() => setInspectorTab('models')}
+                      className={`px-2.5 py-1 rounded transition-colors ${
+                        inspectorTab === 'models' ? 'bg-teal-600 text-white' : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      AI Calls ({report?.execution?.calls?.length || 0})
+                    </button>
                   </div>
                 </div>
-              ) : (
-                <div>
-                  {report.jira_draft ? (
-                    <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 text-xs text-slate-200 space-y-2 max-h-52 overflow-y-auto font-mono">
-                      <div className="font-bold text-teal-300">{report.jira_draft.title}</div>
-                      <div className="text-[11px] whitespace-pre-wrap text-slate-300 font-sans leading-relaxed">
-                        {report.jira_draft.description}
+
+                {inspectorTab === 'swarm' && (
+                  <RouterBar
+                    routingPlan={report?.routing_plan}
+                    activeAgents={report?.routing_plan?.active_agents}
+                  />
+                )}
+
+                {inspectorTab === 'trace' && (
+                  <TimelineStream
+                    events={events}
+                    contradictions={report?.contradictions}
+                    isStreaming={isInvestigating}
+                  />
+                )}
+
+                {inspectorTab === 'models' && (
+                  <div className="space-y-2 text-xs">
+                    <div className="flex items-center justify-between text-[11px] font-mono text-slate-400">
+                      <span>Execution Mode: <strong className="text-emerald-300">{report?.execution?.mode?.toUpperCase() || 'LIVE'}</strong></span>
+                      <span>Provider: <strong className="text-teal-300">{report?.execution?.provider || 'vertex_ai'}</strong></span>
+                    </div>
+                    {report?.execution?.calls && report.execution.calls.length > 0 ? (
+                      <div className="space-y-1.5">
+                        {report.execution.calls.map((c: any, idx: number) => (
+                          <div
+                            key={idx}
+                            className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 font-mono text-[11px]"
+                          >
+                            <span className="text-slate-200 font-semibold">{c.operation}</span>
+                            <span className="text-teal-300">
+                              {c.model} • {c.latency_ms ?? 0}ms
+                            </span>
+                          </div>
+                        ))}
                       </div>
-                      {report.jira_draft.evidence_links?.length > 0 && (
-                        <div className="pt-2 border-t border-slate-800 text-[10px] text-teal-400 space-y-0.5">
-                          <div className="font-bold text-slate-400 uppercase">Verified Proof Locators:</div>
-                          {report.jira_draft.evidence_links.map((lnk, i) => (
-                            <div key={i} className="truncate">• {lnk}</div>
-                          ))}
+                    ) : (
+                      <div className="p-4 text-center text-slate-500 bg-slate-950 rounded-lg border border-slate-800">
+                        Deterministic fast-path completed without additional model calls.
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Operator Action Controls (Maker-Checker / Engineer Steer / Client Follow-Up) */}
+              <PilotMiddleControls
+                report={report}
+                investigationId={investigationId}
+                selectedScenario={selectedScenario}
+                onDecisionSubmitted={(updated) => setReport(updated)}
+                onSimulateReply={handleSimulateReply}
+                onDevSteer={handleDevSteer}
+                isStreaming={isInvestigating}
+              />
+            </div>
+
+            {/* ===============================================================
+                COLUMN 3: STEP 3 — VERIFIED VERDICT, DRAFTS & PROOF (lg:col-span-4)
+               =============================================================== */}
+            <div className="lg:col-span-4 space-y-4">
+              {/* 1. Verified Root-Cause Verdict (Hero Outcome Card at Top!) */}
+              {report && (
+                <div className="bg-slate-900/90 border border-teal-500/40 rounded-xl p-4 shadow-xl space-y-3">
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                    <div className="flex items-center gap-2">
+                      <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-mono text-[10px] font-bold">
+                        STEP 3
+                      </span>
+                      <span className="font-bold text-xs uppercase tracking-wider text-slate-100">
+                        {report.probable_root_cause ? 'Verified Root Cause' : 'Triage Resolution'}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-mono text-[10px] px-2 py-0.5 rounded bg-slate-950 text-slate-300 border border-slate-800">
+                        {report.owner_team}
+                      </span>
+                      {report.probable_root_cause && (
+                        <span className="font-mono text-xs font-bold text-teal-300 bg-teal-950 px-2 py-0.5 rounded border border-teal-500/30">
+                          {(report.probable_root_cause.score * 100).toFixed(0)}% Match
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {report.probable_root_cause ? (
+                    <>
+                      <p className="text-xs font-semibold text-slate-100 leading-relaxed bg-slate-950 p-3 rounded-lg border border-teal-500/25">
+                        {report.probable_root_cause.statement}
+                      </p>
+                      <div className="grid grid-cols-1 gap-1.5 text-xs font-mono bg-slate-950/70 p-2.5 rounded-lg border border-slate-800">
+                        {report.probable_root_cause.culprit_files?.length > 0 && (
+                          <div className="text-[11px] flex items-center justify-between gap-2">
+                            <span className="text-slate-400">Culprit File:</span>
+                            <span className="text-teal-300 font-semibold truncate">
+                              {report.probable_root_cause.culprit_files.join(', ')}
+                            </span>
+                          </div>
+                        )}
+                        {report.probable_root_cause.culprit_commit && (
+                          <div className="text-[11px] flex items-center justify-between gap-2">
+                            <span className="text-slate-400">Verified Git SHA:</span>
+                            <span className="text-emerald-300 font-semibold">
+                              {report.probable_root_cause.culprit_commit}
+                            </span>
+                          </div>
+                        )}
+                        {report.probable_root_cause.supporting_card_ids?.length > 0 && (
+                          <div className="text-[11px] flex items-center justify-between gap-2">
+                            <span className="text-slate-400">Proof Citations:</span>
+                            <span className="text-slate-200">
+                              {report.probable_root_cause.supporting_card_ids.join(', ')}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  ) : (
+                    <p className="text-xs text-slate-200 leading-relaxed bg-slate-950 p-3 rounded-lg border border-slate-800 whitespace-pre-wrap">
+                      {report.summary}
+                    </p>
+                  )}
+
+                  {report.workaround && (
+                    <div className="p-2.5 rounded-lg bg-teal-950/40 border border-teal-500/30 text-[11px] text-teal-200">
+                      <strong className="uppercase text-[10px] text-teal-400 block mb-0.5">
+                        Recommended Fix / Workaround:
+                      </strong>
+                      {report.workaround}
+                    </div>
+                  )}
+
+                  {report.kb_gap && (
+                    <div className="p-2.5 rounded-lg bg-amber-950/35 border border-amber-500/30 text-[11px] text-amber-200">
+                      <strong className="uppercase text-[10px] text-amber-400 block mb-0.5">
+                        Stale Runbook Detected ({report.kb_gap.page_id}):
+                      </strong>
+                      {report.kb_gap.issue}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* 2. Mathematical Trust Meter */}
+              <TrustMeter trust={report?.trust} />
+
+              {/* 3. Ready-to-Send Outputs (Customer Reply & Engineering Bug Draft) */}
+              {report && (
+                <div className="bg-slate-900/90 border border-slate-800/90 rounded-xl p-4 shadow-xl space-y-3">
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                    <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800">
+                      <button
+                        onClick={() => setDraftTab('reply')}
+                        className={`px-2.5 py-1 rounded text-[11px] font-semibold transition-colors ${
+                          draftTab === 'reply'
+                            ? 'bg-teal-600 text-white'
+                            : 'text-slate-400 hover:text-slate-200'
+                        }`}
+                      >
+                        Customer Reply
+                      </button>
+                      <button
+                        onClick={() => setDraftTab('jira')}
+                        className={`px-2.5 py-1 rounded text-[11px] font-semibold transition-colors ${
+                          draftTab === 'jira'
+                            ? 'bg-teal-600 text-white'
+                            : 'text-slate-400 hover:text-slate-200'
+                        }`}
+                      >
+                        Engineering Bug Ticket
+                      </button>
+                    </div>
+                    <button
+                      onClick={draftTab === 'reply' ? handleCopyCustomerDraft : handleCopyJira}
+                      className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-mono flex items-center gap-1 transition-colors border border-slate-700"
+                    >
+                      {(draftTab === 'reply' ? copiedDraft : copiedJira) ? (
+                        <Check className="w-3 h-3 text-emerald-400" />
+                      ) : (
+                        <Copy className="w-3 h-3" />
+                      )}
+                      Copy
+                    </button>
+                  </div>
+
+                  {draftTab === 'reply' ? (
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-[10px] uppercase font-bold text-slate-400">
+                          Sanitized Client Response:
+                        </span>
+                        <span
+                          className={`text-[9px] font-mono font-bold px-2 py-0.5 rounded border ${
+                            report.leak_check?.passed
+                              ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/40'
+                              : 'bg-rose-950/80 text-rose-300 border-rose-500/40'
+                          }`}
+                        >
+                          ✓ LeakCheck Passed
+                        </span>
+                      </div>
+                      <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 text-xs text-slate-200 leading-relaxed font-sans max-h-40 overflow-y-auto whitespace-pre-wrap">
+                        {report.customer_reply_draft}
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      {report.jira_draft ? (
+                        <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 text-xs text-slate-200 space-y-2 max-h-48 overflow-y-auto font-mono">
+                          <div className="font-bold text-teal-300">{report.jira_draft.title}</div>
+                          <div className="text-[11px] whitespace-pre-wrap text-slate-300 font-sans leading-relaxed">
+                            {report.jira_draft.description}
+                          </div>
+                          {report.jira_draft.evidence_links?.length > 0 && (
+                            <div className="pt-2 border-t border-slate-800 text-[10px] text-teal-400 space-y-0.5">
+                              <div className="font-bold text-slate-400 uppercase">Verified Proof Permalinks:</div>
+                              {report.jira_draft.evidence_links.map((lnk, i) => (
+                                <div key={i} className="truncate">• {lnk}</div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="bg-slate-950 p-4 rounded-lg border border-slate-800 text-xs text-slate-500 text-center">
+                          No engineering bug ticket needed for this resolution type.
                         </div>
                       )}
                     </div>
-                  ) : (
-                    <div className="bg-slate-950 p-4 rounded-lg border border-slate-800 text-xs text-slate-500 text-center">
-                      No code defect Jira ticket required (Known Error fast-path, How-To guide, or Abstention).
+                  )}
+
+                  {report.questions_for_client?.length > 0 && (
+                    <div className="pt-2 border-t border-slate-800/80">
+                      <span className="text-[10px] uppercase font-bold text-amber-400 block mb-1.5 flex items-center gap-1">
+                        <HelpCircle className="w-3.5 h-3.5" /> Clarifying Questions for Customer:
+                      </span>
+                      <ul className="space-y-1 text-xs text-slate-200 list-disc list-inside bg-amber-950/20 p-2.5 rounded-lg border border-amber-500/25">
+                        {report.questions_for_client.map((q, idx) => (
+                          <li key={idx} className="leading-snug">
+                            {q.text}
+                          </li>
+                        ))}
+                      </ul>
                     </div>
                   )}
                 </div>
               )}
 
-              {/* Targeted client diagnostic questions (if any) */}
-              {report.questions_for_client?.length > 0 && (
-                <div className="pt-2 border-t border-slate-800/80">
-                  <span className="text-[10px] uppercase font-bold text-amber-400 block mb-1.5 flex items-center gap-1">
-                    <HelpCircle className="w-3.5 h-3.5" /> Discriminating Questions for Client:
+              {/* 4. Verified Evidentiary Proof Cards (Single-Row Filter) */}
+              <div className="bg-slate-900/90 border border-slate-800/90 rounded-xl p-4 shadow-xl space-y-3">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                  <span className="font-bold text-xs uppercase tracking-wider text-slate-200 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                    Verified Proof Citations
                   </span>
-                  <ul className="space-y-1 text-xs text-slate-200 list-disc list-inside bg-amber-950/20 p-2.5 rounded-lg border border-amber-500/25">
-                    {report.questions_for_client.map((q, idx) => (
-                      <li key={idx} className="leading-snug">
-                        {q.text}
-                      </li>
-                    ))}
-                  </ul>
+                  <div className="flex items-center gap-1.5 text-[10px] font-mono">
+                    <span className="px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-500/30 font-bold">
+                      {report?.verified_cards?.length || 0} Verified
+                    </span>
+                    {(report?.dropped_cards?.length || 0) > 0 && (
+                      <span className="px-2 py-0.5 rounded bg-rose-950 text-rose-300 border border-rose-500/30 font-bold">
+                        {report?.dropped_cards?.length} Dropped
+                      </span>
+                    )}
+                  </div>
                 </div>
-              )}
+
+                {report && (
+                  <div className="flex flex-wrap items-center gap-1 text-[10px] font-mono">
+                    {[
+                      { id: 'all', src: 'all', label: `All (${(report.verified_cards?.length || 0) + (report.dropped_cards?.length || 0)})` },
+                      { id: 'primary', src: 'all', label: `Root Cause (${primaryCardIds.size})` },
+                      { id: 'all', src: 'code', label: 'Git Code' },
+                      { id: 'all', src: 'log', label: 'Logs' },
+                      { id: 'all', src: 'doc', label: 'Runbooks' },
+                      { id: 'dropped', src: 'all', label: `Dropped (${report.dropped_cards?.length || 0})` },
+                    ].map((tab, i) => {
+                      const active = evidenceFilter === tab.id && sourceFilter === tab.src;
+                      return (
+                        <button
+                          key={i}
+                          onClick={() => {
+                            setEvidenceFilter(tab.id as any);
+                            setSourceFilter(tab.src);
+                          }}
+                          className={`px-2 py-1 rounded border transition-colors ${
+                            active
+                              ? 'bg-teal-600 text-white border-teal-500 font-bold'
+                              : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-slate-200'
+                          }`}
+                        >
+                          {tab.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                <div className="space-y-2.5 max-h-[340px] overflow-y-auto pr-1">
+                  {sortedAndFilteredCards.length === 0 ? (
+                    <div className="text-center py-6 text-slate-500 text-xs">
+                      No proof cards match this filter.
+                    </div>
+                  ) : (
+                    sortedAndFilteredCards.map((card) => (
+                      <EvidenceCardItem
+                        key={card.card_id}
+                        card={card}
+                        isPrimaryCitation={primaryCardIds.has(card.card_id)}
+                        onInspect={(c) => setInspectedCard(c)}
+                      />
+                    ))
+                  )}
+                </div>
+              </div>
             </div>
-          )}
-        </div>
+          </>
+        )}
       </div>
 
       {/* Proof Inspector Modal */}
