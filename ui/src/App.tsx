@@ -125,6 +125,10 @@ export default function App() {
               <span>{storeLabel}</span>
             </div>
 
+            <div className="hidden 2xl:flex items-center gap-1.5 text-[11px] font-mono px-2.5 py-1.5 rounded-lg bg-slate-900/90 border border-teal-500/30 text-teal-300">
+              <span>ADK • A2A v0.2</span>
+            </div>
+
             <button
               onClick={() => setIsAuditDrawerOpen(true)}
               className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-100 text-xs font-semibold border border-teal-500/40 shadow-sm transition-all hover:border-teal-400"

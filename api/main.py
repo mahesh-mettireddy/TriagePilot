@@ -23,8 +23,17 @@ from slowapi.errors import RateLimitExceeded
 from sse_starlette.sse import EventSourceResponse
 
 import engine.audit as audit
+from api.a2a import router as a2a_router
 from api.ratelimit import limiter
 from api.sse import event_generator
+from engine.adapters.live_adapter import (
+    execute_live_demo_transaction,
+    get_connectors_health,
+    get_live_issues,
+    reset_live_workspace,
+    sync_live_workspace,
+)
+from engine.adk_orchestration import ADK_AVAILABLE, describe_adk_swarm
 from engine.orchestrator import InvestigationManager, get_manager
 from engine.ai_runtime import get_ai_runtime
 from engine.persistence import get_investigation_store
@@ -46,6 +55,8 @@ app = FastAPI(
     description="Autonomous Initial Analyst & Evidentiary Bridge Backend",
     version="1.0.0",
 )
+
+app.include_router(a2a_router)
 
 # Rate limiting
 app.state.limiter = limiter
@@ -416,6 +427,91 @@ async def get_audit_chain(
     return audit.get_chain(investigation_id)
 
 
+@app.get("/api/connectors/status")
+async def connectors_status() -> Dict[str, Any]:
+    """Return live health of all 6 Hexagonal Ports, Git workspace SHA, ADK swarm, and A2A protocol."""
+    health = get_connectors_health()
+    health["adk"] = describe_adk_swarm()
+    health["a2a"] = {
+        "enabled": True,
+        "protocol_version": "0.2.1",
+        "agent_card_url": "/.well-known/agent.json",
+        "task_endpoint": "/a2a/tasks/send",
+    }
+    return health
+
+
+@app.post("/api/live/sync")
+async def sync_live_repo(payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Synchronize any edits in transfers-demo-app/app/ into the live Git repository."""
+    commit_msg = (payload or {}).get("commit_message") if isinstance(payload, dict) else None
+    return sync_live_workspace(commit_message=commit_msg)
+
+
+@app.post("/api/live/trigger")
+async def trigger_live_transaction(payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    Execute a live transaction against transfers-demo-app/app (hot-reloading any
+    edited Python files), emit structured JSONL logs & masked records, and return
+    a pre-formatted incident ticket payload ready for live investigation.
+    """
+    body = payload or {}
+    amount = float(body.get("amount", 100000.0))
+    transfer_type = str(body.get("transfer_type", "same_day"))
+    tier = str(body.get("tier", "standard"))
+    sender_account = str(body.get("sender_account", "918273645501"))
+    beneficiary_account = str(body.get("beneficiary_account", "102938475610"))
+    simulate_utc_hour = body.get("simulate_utc_hour")
+    if simulate_utc_hour is not None:
+        simulate_utc_hour = int(simulate_utc_hour)
+
+    result = execute_live_demo_transaction(
+        amount=amount,
+        transfer_type=transfer_type,
+        tier=tier,
+        sender_account=sender_account,
+        beneficiary_account=beneficiary_account,
+        simulate_utc_hour=simulate_utc_hour,
+    )
+    txn_id = result["transfer_id"]
+    if not result["ok"]:
+        suggested_ticket = (
+            f"Customer transfer {txn_id} for INR {amount:,.2f} from account {sender_account} "
+            f"was rejected with {result.get('error_type')}: '{result.get('error_message')}'. "
+            f"Please investigate the root cause across live logs, ledger state, and recent commits."
+        )
+    else:
+        fee = result.get("fee", 0.0)
+        expected_fee = round(amount * (0.02 if tier == "express" else 0.0125), 2)
+        if abs(fee - expected_fee) >= 0.01:
+            suggested_ticket = (
+                f"Customer reported incorrect fee deduction on transfer {txn_id} (account {sender_account}): "
+                f"principal INR {amount:,.2f} ({tier} tier) was charged fee INR {fee:,.2f} instead of expected INR {expected_fee:,.2f}."
+            )
+        else:
+            suggested_ticket = (
+                f"Customer inquiry regarding transfer {txn_id} for INR {amount:,.2f} (fee INR {fee:,.2f}) "
+                f"from account {sender_account}. Verify execution trace and recent service changes."
+            )
+
+    result["suggested_ticket"] = suggested_ticket
+    return result
+
+
+@app.get("/api/live/issues")
+async def list_live_issues() -> List[Dict[str, Any]]:
+    """Return all engineering issues persisted via LiveWriteAdapter."""
+    return get_live_issues()
+
+
+@app.post("/api/live/reset")
+async def reset_live_repo(payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Reset the live Git workspace to the clean baseline commit."""
+    restore = bool((payload or {}).get("restore_demo_app_files", False))
+    return reset_live_workspace(restore_demo_app_files=restore)
+
+
 # Single-container Cloud Run static file serving
 if _UI_DIST.exists():
     app.mount("/", StaticFiles(directory=str(_UI_DIST), html=True), name="ui")
+

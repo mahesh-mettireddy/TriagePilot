@@ -42,13 +42,14 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy backend code, profiles, fixtures, and scenario data
+# Copy backend code, profiles, fixtures, live target service, and scenario data
 COPY engine/ /app/engine/
 COPY api/ /app/api/
 COPY eval/ /app/eval/
 COPY profiles/ /app/profiles/
 COPY data/ /app/data/
 COPY scripts/ /app/scripts/
+COPY transfers-demo-app/ /app/transfers-demo-app/
 
 # Restore clientrepo .git history from bundle (since .dockerignore/.gcloudignore strip nested .git dirs)
 RUN if [ ! -d /app/data/clientrepo/.git ] && [ -f /app/data/clientrepo.bundle ]; then \
@@ -56,7 +57,7 @@ RUN if [ ! -d /app/data/clientrepo/.git ] && [ -f /app/data/clientrepo.bundle ];
         mv /tmp/clientrepo/.git /app/data/clientrepo/.git && \
         rm -rf /tmp/clientrepo && \
         git -C /app/data/clientrepo reset --hard HEAD; \
-    fi && git config --system --add safe.directory /app/data/clientrepo
+    fi && git config --system --add safe.directory '*'
 
 # Copy built React Cockpit from Stage 1 into /app/ui/dist
 COPY --from=ui-builder /build/ui/dist /app/ui/dist

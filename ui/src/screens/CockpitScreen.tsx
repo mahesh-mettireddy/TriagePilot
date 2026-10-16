@@ -10,6 +10,10 @@ import {
   startInvestigation,
   getInvestigationReport,
   subscribeToEvents,
+  getConnectorsStatus,
+  syncLiveRepo,
+  triggerLiveTransaction,
+  sendA2ATask,
 } from '../api';
 import { RouterBar } from '../components/RouterBar';
 import { TrustMeter } from '../components/TrustMeter';
@@ -40,6 +44,9 @@ import {
   Cpu,
   Clock,
   Layers,
+  Radio,
+  Zap,
+  Network,
 } from 'lucide-react';
 
 const SEVERITY_RANK: Record<string, number> = { P1: 1, P2: 2, P3: 3, P4: 4 };
@@ -54,7 +61,7 @@ const SOURCE_RANK: Record<string, number> = {
 
 export const CockpitScreen: React.FC = () => {
   const [scenarios, setScenarios] = useState<ScenarioMeta[]>([]);
-  const [intakeMode, setIntakeMode] = useState<'queue' | 'custom'>('queue');
+  const [intakeMode, setIntakeMode] = useState<'queue' | 'live' | 'custom'>('queue');
   const [selectedScenarioId, setSelectedScenarioId] = useState<string>('S01');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [sortBy, setSortBy] = useState<'order' | 'severity' | 'class'>('order');
@@ -72,6 +79,24 @@ export const CockpitScreen: React.FC = () => {
   const [evidenceFilter, setEvidenceFilter] = useState<'all' | 'primary' | 'supports' | 'contradicts' | 'dropped'>('all');
   const [sourceFilter, setSourceFilter] = useState<string>('all');
 
+  // Live Service Connector state
+  const [liveStatus, setLiveStatus] = useState<Record<string, any> | null>(null);
+  const [liveAmount, setLiveAmount] = useState<string>('100000');
+  const [liveWindow, setLiveWindow] = useState<'10' | '16'>('10');
+  const [liveTxResult, setLiveTxResult] = useState<Record<string, any> | null>(null);
+  const [isTriggeringLive, setIsTriggeringLive] = useState(false);
+  const [isSyncingRepo, setIsSyncingRepo] = useState(false);
+  const [a2aStatusBadge, setA2aStatusBadge] = useState<string | null>(null);
+
+  const refreshLiveStatus = async () => {
+    try {
+      const st = await getConnectorsStatus();
+      setLiveStatus(st);
+    } catch {
+      // Non-blocking
+    }
+  };
+
   // Load scenarios on mount
   useEffect(() => {
     async function load() {
@@ -87,6 +112,7 @@ export const CockpitScreen: React.FC = () => {
       }
     }
     load();
+    refreshLiveStatus();
   }, []);
 
   // Elapsed timer while investigating
@@ -137,6 +163,16 @@ export const CockpitScreen: React.FC = () => {
     setTicketText(sc.ticket_text || sc.description || '');
   };
 
+  const handleSwitchToLive = async () => {
+    setIntakeMode('live');
+    await refreshLiveStatus();
+    if (!ticketText || selectedScenario?.ticket_text === ticketText) {
+      setTicketText(
+        'Customer transfer for INR 1,00,000.00 from account 918273645501 was rejected or miscalculated after the latest service update. Please verify live telemetry, ledger snapshot, and recent repository commits.'
+      );
+    }
+  };
+
   const handleSwitchToCustom = () => {
     setIntakeMode('custom');
     setTicketText(
@@ -144,10 +180,43 @@ export const CockpitScreen: React.FC = () => {
     );
   };
 
+  const handleSyncLiveRepo = async () => {
+    setIsSyncingRepo(true);
+    try {
+      await syncLiveRepo();
+      await refreshLiveStatus();
+    } catch (err) {
+      console.error('Failed to sync live repo', err);
+    } finally {
+      setIsSyncingRepo(false);
+    }
+  };
+
+  const handleTriggerLiveService = async () => {
+    setIsTriggeringLive(true);
+    try {
+      const res = await triggerLiveTransaction({
+        amount: parseFloat(liveAmount.replace(/,/g, '')) || 100000,
+        transfer_type: 'same_day',
+        tier: 'standard',
+        simulate_utc_hour: parseInt(liveWindow, 10),
+      });
+      setLiveTxResult(res);
+      if (res.suggested_ticket) {
+        setTicketText(res.suggested_ticket);
+      }
+      await refreshLiveStatus();
+    } catch (err) {
+      console.error('Failed to execute live transaction', err);
+    } finally {
+      setIsTriggeringLive(false);
+    }
+  };
+
   // Pre-flight client-side PII & Injection detection preview
   const preflightScan = useMemo(() => {
     const accounts = ticketText.match(/\b\d{10,16}\b/g) || [];
-    const txns = ticketText.match(/\b(?:TXN|BATCH|INC|TCK)-\d+\b/gi) || [];
+    const txns = ticketText.match(/\b(?:TXN|BATCH|INC|TCK)-[A-Z0-9]+\b/gi) || [];
     const hasInj = /ignore\s+(?:all\s+)?previous\s+instructions|system\s+override|output\s+no_bug/i.test(ticketText);
     return {
       accountCount: accounts.length,
@@ -162,10 +231,14 @@ export const CockpitScreen: React.FC = () => {
     setReport(null);
     setEvidenceFilter('all');
     setSourceFilter('all');
+    setA2aStatusBadge(null);
+
+    const activeScenario =
+      intakeMode === 'live' ? 'LIVE' : intakeMode === 'custom' ? 'CUSTOM' : selectedScenarioId;
 
     try {
       const invId = await startInvestigation({
-        scenario_id: intakeMode === 'custom' ? 'CUSTOM' : selectedScenarioId,
+        scenario_id: activeScenario,
         text: ticketText,
         attachments: intakeMode === 'queue' ? selectedScenario?.attachments : [],
         mode: 'live',
@@ -173,6 +246,7 @@ export const CockpitScreen: React.FC = () => {
       });
 
       setInvestigationId(invId);
+      if (intakeMode === 'live') refreshLiveStatus();
 
       subscribeToEvents(
         invId,
@@ -187,6 +261,7 @@ export const CockpitScreen: React.FC = () => {
           try {
             const finalReport = await getInvestigationReport(invId);
             setReport(finalReport);
+            if (intakeMode === 'live') refreshLiveStatus();
           } catch (e) {
             console.error('Error fetching final report', e);
           }
@@ -198,6 +273,32 @@ export const CockpitScreen: React.FC = () => {
       );
     } catch (err) {
       console.error('Failed to launch investigation', err);
+      setIsInvestigating(false);
+    }
+  };
+
+  const handleDelegateViaA2A = async () => {
+    setIsInvestigating(true);
+    setEvents([]);
+    setReport(null);
+    setA2aStatusBadge('Delegating via A2A JSON-RPC 2.0...');
+    const activeScenario =
+      intakeMode === 'live' ? 'LIVE' : intakeMode === 'custom' ? 'CUSTOM' : selectedScenarioId;
+    try {
+      const a2aResp = await sendA2ATask(ticketText, activeScenario);
+      const taskResult = a2aResp.result || a2aResp;
+      const invId = taskResult.investigation_id || taskResult.sessionId;
+      setA2aStatusBadge(`A2A Task ${taskResult.id} → ${taskResult.status?.state?.toUpperCase()}`);
+      if (invId) {
+        setInvestigationId(invId);
+        const finalReport = await getInvestigationReport(invId);
+        setReport(finalReport);
+      }
+      await refreshLiveStatus();
+    } catch (err) {
+      console.error('A2A delegation failed', err);
+      setA2aStatusBadge('A2A Error');
+    } finally {
       setIsInvestigating(false);
     }
   };
@@ -452,6 +553,14 @@ export const CockpitScreen: React.FC = () => {
                   Queue ({scenarios.length})
                 </button>
                 <button
+                  onClick={handleSwitchToLive}
+                  className={`px-2 py-1 rounded flex items-center gap-1 transition-colors ${
+                    intakeMode === 'live' ? 'bg-teal-600 text-white' : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <GitCommit className="w-3 h-3" /> Live Service
+                </button>
+                <button
                   onClick={handleSwitchToCustom}
                   className={`px-2 py-1 rounded flex items-center gap-1 transition-colors ${
                     intakeMode === 'custom' ? 'bg-teal-600 text-white' : 'text-slate-400 hover:text-slate-200'
@@ -533,6 +642,109 @@ export const CockpitScreen: React.FC = () => {
                   })}
                 </div>
               </>
+            ) : intakeMode === 'live' ? (
+              <div className="p-3 rounded-xl bg-slate-950/90 border border-teal-500/40 space-y-2.5 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-teal-300 uppercase text-[10px] flex items-center gap-1.5">
+                    <Radio className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+                    Live Service & Git Telemetry Bridge
+                  </span>
+                  <button
+                    onClick={handleSyncLiveRepo}
+                    disabled={isSyncingRepo}
+                    className="px-2 py-0.5 rounded bg-slate-900 hover:bg-slate-800 border border-slate-700 text-[10px] font-mono text-teal-300 flex items-center gap-1"
+                  >
+                    <RefreshCw className={`w-2.5 h-2.5 ${isSyncingRepo ? 'animate-spin' : ''}`} />
+                    Sync Repo
+                  </button>
+                </div>
+
+                {/* Live Git Workspace Status */}
+                <div className="p-2 rounded-lg bg-slate-900/90 border border-slate-800 space-y-1 font-mono text-[10px]">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">Target Repo (`transfers-demo-app`):</span>
+                    <span className="text-teal-300 font-bold">
+                      @{liveStatus?.git_workspace?.short_sha || '288c17a'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">Workspace State:</span>
+                    {liveStatus?.git_workspace?.has_live_changes ? (
+                      <span className="px-1.5 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-500/40 font-bold">
+                        LIVE CODE DIFF DETECTED ({liveStatus.git_workspace.live_modified_files.length} file)
+                      </span>
+                    ) : (
+                      <span className="text-emerald-400">Baseline Synced</span>
+                    )}
+                  </div>
+                  {liveStatus?.git_workspace?.live_modified_files &&
+                    liveStatus.git_workspace.live_modified_files.length > 0 && (
+                      <div className="text-amber-300 truncate pt-0.5">
+                        Modified: {liveStatus.git_workspace.live_modified_files.join(', ')}
+                      </div>
+                    )}
+                </div>
+
+                {/* Live Service Transaction Execution */}
+                <div className="space-y-1.5 pt-1 border-t border-slate-800/80">
+                  <div className="text-[10px] font-semibold text-slate-300 flex items-center justify-between">
+                    <span>Execute Live Service Request</span>
+                    <span className="font-mono text-[9px] text-slate-400">Emits JSONL Logs + Record</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <div>
+                      <label className="text-[9px] font-mono text-slate-400 block mb-0.5">Amount (INR)</label>
+                      <input
+                        type="number"
+                        value={liveAmount}
+                        onChange={(e) => setLiveAmount(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-[11px] font-mono text-slate-100"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[9px] font-mono text-slate-400 block mb-0.5">UTC Window</label>
+                      <select
+                        value={liveWindow}
+                        onChange={(e) => setLiveWindow(e.target.value as '10' | '16')}
+                        className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-[11px] font-mono text-slate-100"
+                      >
+                        <option value="10">10:15 UTC (Active Window)</option>
+                        <option value="16">16:15 UTC (Pre-17:00 Cutoff)</option>
+                      </select>
+                    </div>
+                  </div>
+                  <button
+                    onClick={handleTriggerLiveService}
+                    disabled={isTriggeringLive}
+                    className="w-full py-1.5 px-2.5 rounded-lg bg-slate-900 hover:bg-teal-950/80 border border-teal-500/40 text-teal-300 font-semibold text-[11px] flex items-center justify-center gap-1.5 transition-colors"
+                  >
+                    <Zap className="w-3.5 h-3.5 text-amber-400" />
+                    {isTriggeringLive ? 'Executing Live Transfer Service...' : 'Trigger Live Payment Request & Populate Ticket'}
+                  </button>
+                </div>
+
+                {liveTxResult && (
+                  <div className="p-2 rounded bg-slate-900/95 border border-slate-800 text-[10px] font-mono space-y-0.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-teal-300 font-bold">{liveTxResult.transfer_id}</span>
+                      <span
+                        className={
+                          liveTxResult.status === 'COMPLETED'
+                            ? 'text-emerald-400 font-bold'
+                            : 'text-rose-400 font-bold'
+                        }
+                      >
+                        {liveTxResult.status}
+                      </span>
+                    </div>
+                    <div className="text-slate-400 truncate">
+                      {liveTxResult.error_message
+                        ? `${liveTxResult.error_type}: ${liveTxResult.error_message}`
+                        : `Charged Fee: INR ${Number(liveTxResult.fee || 0).toFixed(2)}`}
+                    </div>
+                  </div>
+                )}
+              </div>
             ) : (
               <div className="p-2.5 rounded-lg bg-slate-950/90 border border-teal-500/30 space-y-2 text-xs">
                 <div className="flex items-center justify-between">
@@ -563,7 +775,11 @@ export const CockpitScreen: React.FC = () => {
             <div className="flex items-center justify-between border-b border-slate-800 pb-2">
               <span className="font-bold text-xs uppercase tracking-wider text-slate-200 flex items-center gap-1.5">
                 <Terminal className="w-3.5 h-3.5 text-teal-400" />
-                {intakeMode === 'custom' ? 'Custom Payload' : `Ticket ${selectedScenario?.ticket_id || selectedScenarioId}`}
+                {intakeMode === 'live'
+                  ? 'Live Service Incident Payload'
+                  : intakeMode === 'custom'
+                  ? 'Custom Payload'
+                  : `Ticket ${selectedScenario?.ticket_id || selectedScenarioId}`}
               </span>
               {intakeMode === 'queue' && selectedScenario?.created_at && (
                 <span className="text-[10px] font-mono text-slate-400">
@@ -671,10 +887,34 @@ export const CockpitScreen: React.FC = () => {
               ) : (
                 <>
                   <Play className="w-4 h-4 fill-white" />
-                  Run Autonomous Triage ({intakeMode === 'custom' ? 'CUSTOM' : selectedScenario?.ticket_id || selectedScenarioId})
+                  Run Autonomous Triage (
+                  {intakeMode === 'live'
+                    ? 'LIVE'
+                    : intakeMode === 'custom'
+                    ? 'CUSTOM'
+                    : selectedScenario?.ticket_id || selectedScenarioId}
+                  )
                 </>
               )}
             </button>
+
+            {/* Google A2A Protocol Delegation Action */}
+            <button
+              onClick={handleDelegateViaA2A}
+              disabled={isInvestigating || !ticketText.trim()}
+              className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-700/80 text-slate-300 font-mono text-[11px] transition-colors disabled:opacity-50"
+              title="Delegate investigation via Google A2A (Agent2Agent) JSON-RPC 2.0 Protocol"
+            >
+              <Network className="w-3.5 h-3.5 text-teal-400" />
+              Delegate via Google A2A Protocol (`tasks/send`)
+            </button>
+
+            {a2aStatusBadge && (
+              <div className="p-2 rounded-lg bg-teal-950/60 border border-teal-500/40 text-[10px] font-mono text-teal-200 flex items-center justify-between">
+                <span>🔗 {a2aStatusBadge}</span>
+                <span className="text-emerald-400 font-bold">A2A-0.2</span>
+              </div>
+            )}
           </div>
         </div>
 

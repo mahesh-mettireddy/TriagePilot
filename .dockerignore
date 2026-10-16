@@ -28,3 +28,4 @@ htmlcov/
 # Logs & Brain
 *.log
 brain/
+data/live/

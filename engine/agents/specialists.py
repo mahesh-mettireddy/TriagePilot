@@ -45,7 +45,7 @@ from engine.schemas import (
     VerificationResult,
     VerificationStatus,
 )
-from engine.adk_orchestration import build_adk_specialist_swarm
+from engine.adk_orchestration import build_adk_specialist_swarm, describe_adk_swarm
 from engine.tool_budget import ToolBudget, budgeted_adapters
 
 logger = logging.getLogger(__name__)
@@ -472,20 +472,24 @@ class CodeAgent:
                 None, lambda: self._port.search_code(search_query, limit=5)
             )
             for hit in results:
+                pointer_data: dict[str, Any] = {
+                    "repo": "clientrepo",
+                    "path": hit.get("path", ""),
+                    "line_start": hit.get("line_number", 1),
+                    "line_end": hit.get("line_number", 1),
+                    "sha": hit.get("sha", ""),
+                }
+                if hit.get("commit_sha"):
+                    pointer_data["commit_sha"] = hit["commit_sha"]
                 card = _pending_card(
                     card_id=_card_id(self.PREFIX, counter),
                     specialist="CodeAgent",
                     source_type=SourceType.CODE,
-                    pointer={
-                        "repo": "clientrepo",
-                        "path": hit.get("path", ""),
-                        "line_start": hit.get("line_number", 1),
-                        "line_end": hit.get("line_number", 1),
-                        "sha": hit.get("sha", ""),
-                    },
+                    pointer=pointer_data,
                     snippet=hit.get("snippet", "")[:400],
                     claim=f"Code match in {hit.get('path','')}:{hit.get('line_number','')} — {hit.get('snippet','')[:80]}",
                     stance=Stance.SUPPORTS,
+                    observed_at=hit.get("commit_date"),
                 )
                 cards.append(card)
                 await _emit(queue, _make_event(seq, "card_added", {"card_id": card.card_id, "agent": "CodeAgent"}))
@@ -537,11 +541,13 @@ class CodeAgent:
             return py_files[0]
         # Domain-specific keywords before generic "transfer"
         keyword_map = [
-            (["cutoff", "same-day", "same_day", "4 pm", "4:15 pm"], "cutoff.py"),
-            (["fee", "calculator", "rounding", "overbilled", "paisa"], "calculator.py"),
-            (["sms", "notification"], "sms.py"),
-            (["idempotency", "charged twice", "duplicate", "clicking transfer quickly"], "idempotency.py"),
-            (["daily limit", "daily_limit", "1,00,000", "100000", "limit exceeded", "limit"], "daily_limit.py"),
+            (["cutoff", "same-day", "same_day", "4 pm", "4:15 pm", "16:00", "timezone"], "cutoff.py"),
+            (["fee", "calculator", "rounding", "overbilled", "overcharged", "paisa", "tier", "gst", "commission", "deduction"], "calculator.py"),
+            (["sms", "notification", "alert", "delivery"], "sms.py"),
+            (["idempotency", "charged twice", "duplicate", "clicking transfer quickly", "double"], "idempotency.py"),
+            (["daily limit", "daily_limit", "1,00,000", "100000", "limit exceeded", "limit", "cap", "maximum"], "daily_limit.py"),
+            (["beneficiary", "international", "domestic", "swift", "bic", "iban", "ifsc", "cooling"], "manager.py"),
+            (["settlement", "batch", "clearing", "neft"], "batch.py"),
         ]
         for triggers, hint in keyword_map:
             if any(t in lower for t in triggers):
@@ -578,7 +584,7 @@ class RecordAgent:
         combined_text = ticket.masked_text or ticket.text
         if ticket.human_context and ticket.human_context.message:
             combined_text = f"{combined_text}\n{ticket.human_context.message}"
-        text_txns = re.findall(r"TXN-\d+", combined_text, re.IGNORECASE)
+        text_txns = re.findall(r"TXN-[A-Z0-9]+", combined_text, re.IGNORECASE)
         all_txn_ids = list(dict.fromkeys(txn_ids + text_txns))
 
         if not all_txn_ids:
@@ -672,6 +678,7 @@ async def run_active_agents(
         list(plan.active_agents),
         budget=budget,
     )
+    adk_meta = describe_adk_swarm(list(plan.active_agents))
     await _emit(event_queue, _make_event(seq, "adk_orchestration", {
         "native_adk_registered": adk_swarm is not None,
         "native_adk_executed": False,
@@ -679,6 +686,7 @@ async def run_active_agents(
         "active_agents": list(plan.active_agents),
         "model": "gemini-2.5-flash",
         "tool_budget": budget.limit,
+        "swarm_topology": adk_meta,
     }))
 
     # Emit agent_skipped for pruned agents

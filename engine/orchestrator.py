@@ -32,7 +32,14 @@ from pathlib import Path
 from typing import Any, Optional
 
 import engine.audit as audit
-from engine.adapters.fixture_adapter import get_adapters
+from engine.adapters.fixture_adapter import FixtureWriteAdapter, get_adapters
+from engine.adapters.live_adapter import (
+    LiveRecordAdapter,
+    LiveWriteAdapter,
+    execute_live_demo_transaction,
+    get_scenario_adapters,
+    sync_live_workspace,
+)
 from engine.agents.hypothesis_agent import generate_hypotheses
 from engine.agents.report_agent import generate_report
 from engine.agents.specialists import run_active_agents
@@ -281,24 +288,66 @@ class InvestigationManager:
         raw_text = (req.text or "").strip()
         bundle_ticket: dict[str, Any] = {}
 
-        if scenario_id == "CUSTOM" and raw_text:
-            low = raw_text.lower()
-            if any(k in low for k in ("fee", "2041", "rounding", "paisa", "0.01", "calculator")):
-                scenario_id = "S02"
-            elif any(k in low for k in ("twice", "duplicate", "3011", "3012", "idempotency")):
-                scenario_id = "S03"
-            elif any(k in low for k in ("sms", "notification", "4015", "retry")):
-                scenario_id = "S04"
-            elif any(k in low for k in ("1,00,000", "100000", "daily limit", "6001", "limit exceeded")):
-                scenario_id = "S06"
-            elif any(k in low for k in ("holiday", "neft", "batch-901", "pending_settlement")):
-                scenario_id = "S09"
-            elif any(k in low for k in ("how do i", "how to", "international beneficiary", "iban", "swift")):
-                scenario_id = "S10"
-            elif len(raw_text.split()) <= 14 and not req.human_context:
-                scenario_id = "S11"
-            else:
-                scenario_id = "S01"
+        # Synchronize live workspace if running in LIVE or CUSTOM mode
+        if scenario_id in ("LIVE", "CUSTOM"):
+            import re as _re
+            sync_info = sync_live_workspace()
+            has_live_changes = bool(sync_info.get("has_live_changes"))
+            fixture_txn_ids = {"TXN-1009", "TXN-2041", "TXN-3011", "TXN-3012", "TXN-4015", "TXN-6001"}
+            mentioned_txns = [t.upper() for t in _re.findall(r"TXN-[A-Z0-9]+", raw_text, _re.IGNORECASE)]
+            mentions_fixture_txn = any(t in fixture_txn_ids for t in mentioned_txns)
+
+            if scenario_id == "LIVE" or has_live_changes or (
+                scenario_id == "CUSTOM" and mentioned_txns and not mentions_fixture_txn
+            ):
+                scenario_id = "LIVE"
+                # Ensure a live telemetry record/log exists for the reported issue
+                live_rec_adapter = LiveRecordAdapter()
+                existing_rec = (
+                    live_rec_adapter.get_transfer_record("LIVE", mentioned_txns[0])
+                    if mentioned_txns
+                    else None
+                )
+                if existing_rec is None and raw_text:
+                    # Extract amount or use default to execute live probe against transfers-demo-app
+                    amt_matches = _re.findall(r"(?:INR|Rs\.?|₹)\s*([\d,]+(?:\.\d{1,2})?)", raw_text, _re.IGNORECASE)
+                    probe_amount = 100000.0
+                    if amt_matches:
+                        try:
+                            probe_amount = float(amt_matches[0].replace(",", ""))
+                        except ValueError:
+                            probe_amount = 100000.0
+                    low_raw = raw_text.lower()
+                    sim_hour = 16 if any(k in low_raw for k in ("4 pm", "4:05 pm", "4:15 pm", "16:00", "cutoff")) else 10
+                    probe_res = execute_live_demo_transaction(
+                        amount=probe_amount,
+                        transfer_type="same_day",
+                        tier="express" if "express" in low_raw else "standard",
+                        simulate_utc_hour=sim_hour,
+                        transfer_id=mentioned_txns[0] if mentioned_txns else None,
+                    )
+                    if not mentioned_txns and probe_res.get("transfer_id"):
+                        raw_text = f"{raw_text} (Live Telemetry Reference: {probe_res['transfer_id']})"
+            elif scenario_id == "CUSTOM" and raw_text:
+                low = raw_text.lower()
+                if any(k in low for k in ("fee", "2041", "rounding", "paisa", "0.01", "calculator")):
+                    scenario_id = "S02"
+                elif any(k in low for k in ("twice", "duplicate", "3011", "3012", "idempotency")):
+                    scenario_id = "S03"
+                elif any(k in low for k in ("sms", "notification", "4015", "retry")):
+                    scenario_id = "S04"
+                elif any(k in low for k in ("1,00,000", "100000", "daily limit", "6001", "limit exceeded")):
+                    scenario_id = "S06"
+                elif any(k in low for k in ("holiday", "neft", "batch-901", "pending_settlement")):
+                    scenario_id = "S09"
+                elif any(k in low for k in ("how do i", "how to", "international beneficiary", "iban", "swift")):
+                    scenario_id = "S10"
+                elif len(raw_text.split()) <= 14 and not req.human_context:
+                    scenario_id = "S11"
+                else:
+                    scenario_id = "S01"
+
+        active_adapters = get_scenario_adapters(scenario_id, self._adapters)
 
         ticket_path = _REPO_ROOT / "data" / "bundles" / scenario_id / "ticket.json"
         if ticket_path.exists():
@@ -416,7 +465,7 @@ class InvestigationManager:
         cards: list[EvidenceCard] = await run_active_agents(
             ticket=ticket_dto,
             plan=plan,
-            adapters=self._adapters,
+            adapters=active_adapters,
             event_queue=swarm_queue,
         )
         await swarm_queue.put(None)  # signal forwarder to exit
@@ -517,7 +566,7 @@ class InvestigationManager:
             )
 
         # Step 4: Deterministic Verifier
-        verified_cards, dropped_cards = verify_cards(cards, self._adapters, scenario_id)
+        verified_cards, dropped_cards = verify_cards(cards, active_adapters, scenario_id)
         audit.append(
             investigation_id,
             "verifier_result",
@@ -751,7 +800,11 @@ class InvestigationManager:
         )
 
         if decision.status == "approved":
-            write_adapter = self._adapters["write"]
+            write_adapter = (
+                LiveWriteAdapter()
+                if report.scenario_id == "LIVE" and type(self._adapters.get("write")) is FixtureWriteAdapter
+                else self._adapters["write"]
+            )
             ref_info = {}
             if report.jira_draft:
                 jira_res = write_adapter.create_issue(

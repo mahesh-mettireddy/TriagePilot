@@ -87,6 +87,71 @@ export async function submitDecision(id: string, decision: HumanDecision): Promi
   return res.json();
 }
 
+export async function getConnectorsStatus(): Promise<Record<string, any>> {
+  const res = await fetch(`${API_BASE}/connectors/status`);
+  if (!res.ok) throw new Error('Failed to fetch connectors status');
+  return res.json();
+}
+
+export async function syncLiveRepo(commitMessage?: string): Promise<Record<string, any>> {
+  const res = await fetch(`${API_BASE}/live/sync`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(commitMessage ? { commit_message: commitMessage } : {}),
+  });
+  if (!res.ok) throw new Error('Failed to sync live repository');
+  return res.json();
+}
+
+export async function triggerLiveTransaction(payload: {
+  amount?: number;
+  transfer_type?: string;
+  tier?: string;
+  simulate_utc_hour?: number;
+}): Promise<Record<string, any>> {
+  const res = await fetch(`${API_BASE}/live/trigger`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error('Failed to execute live transaction');
+  return res.json();
+}
+
+export async function getA2AAgentCard(): Promise<Record<string, any>> {
+  const res = await fetch(`${API_BASE}/a2a/agent-card`);
+  if (!res.ok) throw new Error('Failed to fetch A2A Agent Card');
+  return res.json();
+}
+
+export async function sendA2ATask(text: string, scenarioId: string = 'LIVE'): Promise<Record<string, any>> {
+  const res = await fetch('/a2a/tasks/send', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: `a2a-${Date.now()}`,
+      method: 'tasks/send',
+      params: {
+        id: `task-${Date.now()}`,
+        scenario_id: scenarioId,
+        message: {
+          role: 'user',
+          parts: [{ type: 'text', text }],
+        },
+      },
+    }),
+  });
+  if (!res.ok) throw new Error('Failed to send A2A task');
+  return res.json();
+}
+
+export async function getLiveIssues(): Promise<Array<Record<string, any>>> {
+  const res = await fetch(`${API_BASE}/live/issues`);
+  if (!res.ok) throw new Error('Failed to fetch live issues');
+  return res.json();
+}
+
 export function subscribeToEvents(
   investigationId: string,
   onEvent: (event: SSEEvent) => void,
