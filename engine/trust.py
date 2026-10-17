@@ -1,14 +1,14 @@
 """
 engine/trust.py
 ---------------
-Step 7 of the 12-step pipeline: Deterministic Trust Scorer & Policy Gate.
+Step 7 of the 12-step pipeline: Deterministic Evidence-Quality Scorer & Conclusion Gates.
 
 **Pure Python — ZERO LLM involvement.**
 
-Computes a transparent trust score [0.00 - 1.00] from verified evidence:
+Computes a transparent evidence-quality / trust score [0.00 - 1.00] from verified evidence:
 
   score = clamp(
-      0.40 * c_ver    # verified evidence volume
+      0.40 * c_ver    # verified evidence volume (deduplicated by provenance)
     + 0.25 * c_div    # source diversity (how many source types)
     + 0.20 * c_spec   # code/log specificity (file:line pointers)
     + 0.15 * c_time   # temporal alignment (timestamps present & consistent)
@@ -17,30 +17,41 @@ Computes a transparent trust score [0.00 - 1.00] from verified evidence:
     , 0, 1
   )
 
-Trust bands:
-  HIGH   >= 0.70  -> CONCLUDE
-  MEDIUM   0.45 - 0.70  -> CONCLUDE_WITH_CAVEAT
-  LOW    <  0.45  -> ABSTAIN
+Exact precedence for trust bands:
+  HIGH   : score >= 0.70            -> CONCLUDE
+  MEDIUM : 0.45 <= score < 0.70     -> CONCLUDE_WITH_CAVEAT
+  LOW    : score <  0.45            -> ABSTAIN
 
-Also ABSTAIN if top-2 hypothesis gap < 0.10.
+Hard conclusion gates:
+  - Provenance deduplication prevents duplicate citations to the same document/file
+    from inflating evidence volume (`c_ver`).
+  - Unresolved material contradictions or missing claim-supported causal evidence
+    gate the outcome (`NEED_EVIDENCE`, `SUPPORTED_HYPOTHESIS`, `REPRODUCED_IN_FIXTURE`, `BLOCKED`).
+  - Top-2 hypothesis gap < 0.10 forces ABSTAIN (`NEED_EVIDENCE`).
 """
 
 from __future__ import annotations
 
 import logging
+import math
 from datetime import datetime, timezone
 from typing import Any, Optional
 
 from engine.schemas import (
     Contradiction,
+    ContradictionKind,
     DecisionBand,
     EvidenceCard,
+    EvidenceLevel,
+    GateOutcome,
     Hypothesis,
     PolicyAction,
     SourceType,
+    Stance,
     TrustComponents,
     TrustSummary,
 )
+from engine.verifier import compute_provenance_key
 
 logger = logging.getLogger(__name__)
 
@@ -60,21 +71,39 @@ def _clamp(value: float, lo: float = 0.0, hi: float = 1.0) -> float:
     return max(lo, min(hi, value))
 
 
+def _unique_provenance_keys(verified_cards: list[EvidenceCard]) -> set[str]:
+    keys: set[str] = set()
+    for card in verified_cards:
+        key = card.verification.provenance_key or compute_provenance_key(card)
+        keys.add(key)
+    return keys
+
+
 # ---------------------------------------------------------------------------
 # Component calculators
 # ---------------------------------------------------------------------------
 
-def _c_ver(verified_count: int, total_count: int) -> float:
+def _c_ver(
+    verified_count: int,
+    total_count: int,
+    unique_provenance_count: Optional[int] = None,
+) -> float:
     """
-    Verified evidence volume: ratio of verified cards to total.
-    Boosted by log-scale for absolute count (5+ verified = full credit).
+    Verified evidence volume: ratio of verified cards to total,
+    boosted by log-scale for unique provenance count (5+ unique sources = full credit).
+    Duplicate citations to the same provenance key do not inflate volume credit.
     """
-    if total_count == 0:
+    if total_count == 0 or verified_count == 0:
         return 0.0
-    ratio = verified_count / total_count
-    # Bonus for having more absolute verified cards (diminishing returns)
-    import math
-    abs_bonus = min(1.0, math.log1p(verified_count) / math.log1p(5))
+    effective_verified = (
+        unique_provenance_count
+        if unique_provenance_count is not None
+        else verified_count
+    )
+    dropped_count = max(0, total_count - verified_count)
+    effective_total = effective_verified + dropped_count
+    ratio = effective_verified / effective_total if effective_total > 0 else 0.0
+    abs_bonus = min(1.0, math.log1p(effective_verified) / math.log1p(5))
     return _clamp(0.6 * ratio + 0.4 * abs_bonus)
 
 
@@ -188,7 +217,7 @@ def _p_unver(dropped_count: int, total_count: int) -> float:
 
 
 # ---------------------------------------------------------------------------
-# Main trust scorer
+# Main trust scorer & hard conclusion gates
 # ---------------------------------------------------------------------------
 
 def compute_trust(
@@ -198,29 +227,36 @@ def compute_trust(
     hypotheses: Optional[list[Hypothesis]] = None,
 ) -> TrustSummary:
     """
-    Compute the deterministic trust score and policy action.
+    Compute the deterministic evidence-quality score, apply hard conclusion gates,
+    and determine the policy action and gate outcome.
 
     Args:
         verified_cards:  Cards that passed verification.
         dropped_cards:   Cards that failed verification.
         contradictions:  Contradictions found by the reconciler.
-        hypotheses:      Optional list of hypotheses (for gap check).
+        hypotheses:      Optional list of hypotheses (for gap & support check).
 
     Returns:
-        TrustSummary with score, band, policy_action, components, and rationale.
+        TrustSummary with score, band, policy_action, gate_outcome, gate_reasons,
+        components, and rationale.
     """
     total = len(verified_cards) + len(dropped_cards)
+    unique_prov = _unique_provenance_keys(verified_cards)
+    unique_prov_count = len(unique_prov)
 
-    # Compute components
+    # Compute components (using deduplicated provenance count for c_ver)
     raw_components = {
-        "c_ver": _c_ver(len(verified_cards), total),
+        "c_ver": _c_ver(len(verified_cards), total, unique_prov_count),
         "c_div": _c_div(verified_cards),
         "c_spec": _c_spec(verified_cards),
         "c_time": _c_time(verified_cards),
         "p_contra": _p_contra(contradictions),
         "p_unver": _p_unver(len(dropped_cards), total),
     }
-    components = TrustComponents(**{key: round(value, 4) for key, value in raw_components.items()})
+    components = TrustComponents(
+        **{key: round(value, 4) for key, value in raw_components.items()},
+        unique_provenance_count=unique_prov_count,
+    )
 
     # Apply formula
     raw_score = (
@@ -234,29 +270,99 @@ def compute_trust(
     bounded_score = _clamp(raw_score)
     score = round(bounded_score, 2)
 
-    # Determine band
-    if bounded_score >= 0.70:
+    # Exact score boundary precedence:
+    # HIGH >= 0.70, MEDIUM 0.45..0.69, LOW < 0.45
+    if score >= 0.70:
         band = DecisionBand.HIGH
         policy = PolicyAction.CONCLUDE
-    elif bounded_score >= 0.45:
+    elif score >= 0.45:
         band = DecisionBand.MEDIUM
         policy = PolicyAction.CONCLUDE_WITH_CAVEAT
     else:
         band = DecisionBand.LOW
         policy = PolicyAction.ABSTAIN
 
-    # Additional ABSTAIN check: top-2 hypothesis gap < 0.10
+    gate_reasons: list[str] = []
+
+    if len(verified_cards) > unique_prov_count:
+        gate_reasons.append(
+            f"Deduplicated {len(verified_cards)} verified citations into {unique_prov_count} unique provenance source(s)"
+        )
+
+    # Hard Gate 1: Top-2 hypothesis gap < 0.10 -> force ABSTAIN (NEED_EVIDENCE)
     if hypotheses and len(hypotheses) >= 2:
         sorted_h = sorted(hypotheses, key=lambda h: h.score, reverse=True)
         gap = sorted_h[0].score - sorted_h[1].score
         if gap < 0.10 and band != DecisionBand.LOW:
             policy = PolicyAction.ABSTAIN
-            band = DecisionBand.LOW  # Override
+            band = DecisionBand.LOW
+            gate_reasons.append(
+                f"Top-2 hypothesis gap ({gap:.2f}) < 0.10 threshold; discriminating check required"
+            )
+
+    # Hard Gate 2: Valid source citation that does NOT explain the failure
+    # If all CODE cards are only SOURCE_VALIDATED (e.g. unrelated function or httpx bump)
+    # and there are no CLAIM_SUPPORTED/CAUSE_REPRODUCED causal cards, block HIGH conclusion.
+    code_cards = [c for c in verified_cards if c.source_type == SourceType.CODE]
+    if code_cards and all(
+        c.verification.evidence_level == EvidenceLevel.SOURCE_VALIDATED
+        and c.verification.limitations
+        and "does not explain" in c.verification.limitations.lower()
+        for c in code_cards
+    ):
+        if band == DecisionBand.HIGH:
+            band = DecisionBand.MEDIUM
+            policy = PolicyAction.CONCLUDE_WITH_CAVEAT
+        gate_reasons.append(
+            "Code citation exists at revision (SOURCE_VALIDATED) but does not explain the observed failure; blocked from HIGH root-cause conclusion"
+        )
+
+    # Hard Gate 3: Unresolved STATE_MISMATCH without code/log corroboration
+    has_state_mismatch = any(c.kind == ContradictionKind.STATE_MISMATCH for c in contradictions)
+    has_causal_code_or_log = any(
+        c.source_type in {SourceType.CODE, SourceType.LOG}
+        and c.verification.evidence_level in {EvidenceLevel.CLAIM_SUPPORTED, EvidenceLevel.CAUSE_REPRODUCED}
+        for c in verified_cards
+    )
+    if has_state_mismatch and not has_causal_code_or_log and band == DecisionBand.HIGH:
+        band = DecisionBand.MEDIUM
+        policy = PolicyAction.CONCLUDE_WITH_CAVEAT
+        gate_reasons.append(
+            "Unresolved STATE_MISMATCH without corroborating code/log trace caps conclusion at CONCLUDE_WITH_CAVEAT"
+        )
+
+    # Hard Gate 4: Duplicate citations to a single provenance source must not masquerade as
+    # independent corroboration to authorize a HIGH conclusion.
+    if len(verified_cards) > 1 and unique_prov_count == 1 and band == DecisionBand.HIGH:
+        band = DecisionBand.MEDIUM
+        policy = PolicyAction.CONCLUDE_WITH_CAVEAT
+        gate_reasons.append(
+            f"All {len(verified_cards)} verified cards share a single provenance source; independent corroboration required for HIGH conclusion"
+        )
+
+    # Determine explicit GateOutcome
+    has_reproduced = any(
+        c.verification.evidence_level == EvidenceLevel.CAUSE_REPRODUCED
+        for c in verified_cards
+    )
+    if policy == PolicyAction.ESCALATE_SECURITY:
+        gate_outcome = GateOutcome.BLOCKED
+    elif policy == PolicyAction.ABSTAIN:
+        gate_outcome = GateOutcome.NEED_EVIDENCE
+    elif band == DecisionBand.HIGH and has_reproduced:
+        gate_outcome = GateOutcome.REPRODUCED_IN_FIXTURE
+    else:
+        gate_outcome = GateOutcome.SUPPORTED_HYPOTHESIS
+
+    if not gate_reasons:
+        gate_reasons.append(
+            f"Passed evidence gate ({gate_outcome.value}) with {unique_prov_count} independent provenance source(s)"
+        )
 
     # Build rationale
     rationale_parts = [
         f"Verified {len(verified_cards)}/{total} cards",
-        f"({len({c.source_type for c in verified_cards})} source types)",
+        f"({unique_prov_count} unique provenance, {len({c.source_type for c in verified_cards})} source types)",
     ]
     if contradictions:
         rationale_parts.append(
@@ -265,7 +371,7 @@ def compute_trust(
         )
     if len(dropped_cards) > 0:
         rationale_parts.append(f"{len(dropped_cards)} card(s) dropped by verifier")
-    rationale_parts.append(f"Trust score: {score} ({band.value})")
+    rationale_parts.append(f"Trust score: {score} ({band.value} / {gate_outcome.value})")
 
     return TrustSummary(
         score=score,
@@ -273,4 +379,6 @@ def compute_trust(
         policy_action=policy,
         components=components,
         rationale=". ".join(rationale_parts),
+        gate_outcome=gate_outcome,
+        gate_reasons=gate_reasons,
     )

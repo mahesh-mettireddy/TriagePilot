@@ -20,6 +20,7 @@ interface PilotMiddleControlsProps {
   onDecisionSubmitted?: (updatedReport: ReportOutput) => void;
   onSimulateReply?: (replyText: string) => void;
   onDevSteer?: (steerText: string) => void;
+  onEvidenceUpdate?: (evidenceText: string) => void;
   isStreaming?: boolean;
 }
 
@@ -30,14 +31,18 @@ export const PilotMiddleControls: React.FC<PilotMiddleControlsProps> = ({
   onDecisionSubmitted,
   onSimulateReply,
   onDevSteer,
+  onEvidenceUpdate,
   isStreaming = false,
 }) => {
-  const [activeTab, setActiveTab] = useState<'decision' | 'steer' | 'reply'>('decision');
+  const [activeTab, setActiveTab] = useState<'decision' | 'steer' | 'reply' | 'evidence'>('decision');
   const [clientReplyText, setClientReplyText] = useState(
     'Happened at 4:15 PM IST on same-day transfer TXN-1009. Rejected with CUTOFF_EXCEEDED.'
   );
   const [steerText, setSteerText] = useState(
     'Inspect app/transfers/cutoff.py around is_before_cutoff() and verify UTC vs Asia/Kolkata (IST) timezone comparison.'
+  );
+  const [evidenceUpdateText, setEvidenceUpdateText] = useState(
+    'Corrected telemetry update: transfer TXN-1009 was submitted at 10:15 UTC (3:45 PM IST) before cutoff, and gateway audit log shows manual compliance hold HOLD_COMPLIANCE_REVIEW rather than cutoff rejection.'
   );
   const [approverName] = useState('Alex Rivera (Principal SRE)');
   const [editMode, setEditMode] = useState(false);
@@ -46,7 +51,7 @@ export const PilotMiddleControls: React.FC<PilotMiddleControlsProps> = ({
   const [rejectionReason] = useState('Requires deeper heap & trace inspection before customer notification.');
   const [submitting, setSubmitting] = useState(false);
 
-  // Sync context-aware steer & client reply whenever selected ticket changes
+  // Sync context-aware steer, client reply & contradictory evidence update whenever selected ticket changes
   useEffect(() => {
     if (selectedScenario?.default_steer) {
       setSteerText(selectedScenario.default_steer);
@@ -54,7 +59,15 @@ export const PilotMiddleControls: React.FC<PilotMiddleControlsProps> = ({
     if (selectedScenario?.default_client_reply) {
       setClientReplyText(selectedScenario.default_client_reply);
     }
-  }, [selectedScenario?.id, selectedScenario?.default_steer, selectedScenario?.default_client_reply]);
+    if (selectedScenario?.default_evidence_update) {
+      setEvidenceUpdateText(selectedScenario.default_evidence_update);
+    }
+  }, [
+    selectedScenario?.id,
+    selectedScenario?.default_steer,
+    selectedScenario?.default_client_reply,
+    selectedScenario?.default_evidence_update,
+  ]);
 
   // Auto-focus Client Reply tab when policy is ABSTAIN (e.g., S11 Turn-1)
   useEffect(() => {
@@ -161,6 +174,18 @@ export const PilotMiddleControls: React.FC<PilotMiddleControlsProps> = ({
           >
             <MessageSquare className="w-3.5 h-3.5" />
             Client Follow-Up {isAbstained ? '(Action Needed)' : ''}
+          </button>
+
+          <button
+            onClick={() => setActiveTab('evidence')}
+            className={`px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors ${
+              activeTab === 'evidence'
+                ? 'bg-rose-600 text-white shadow'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <AlertTriangle className="w-3.5 h-3.5" />
+            Contradictory Evidence
           </button>
         </div>
 
@@ -362,6 +387,34 @@ export const PilotMiddleControls: React.FC<PilotMiddleControlsProps> = ({
             >
               <Send className="w-3.5 h-3.5" />
               Ingest Client Clarification &amp; Resume Triage
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Tab 4: Contradictory / Corrected Evidence Update (Withdrawn Conclusion Demo) */}
+      {activeTab === 'evidence' && (
+        <div className="space-y-2.5">
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-slate-300">
+              Ingest late-arriving or contradictory telemetry to withdraw prior conclusion &amp; increment revision:
+            </p>
+            <span className="text-[10px] font-mono text-rose-400">HUMAN_CONTEXT: EVIDENCE_UPDATE</span>
+          </div>
+          <textarea
+            value={evidenceUpdateText}
+            onChange={(e) => setEvidenceUpdateText(e.target.value)}
+            className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs text-slate-200 focus:outline-none focus:border-rose-500 font-sans"
+            rows={2}
+          />
+          <div className="flex justify-end">
+            <button
+              onClick={() => onEvidenceUpdate && onEvidenceUpdate(evidenceUpdateText)}
+              disabled={isStreaming || !evidenceUpdateText.trim()}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs transition-colors shadow-md disabled:opacity-40"
+            >
+              <AlertTriangle className="w-3.5 h-3.5" />
+              Ingest Contradictory Evidence &amp; Withdraw Prior Conclusion
             </button>
           </div>
         </div>

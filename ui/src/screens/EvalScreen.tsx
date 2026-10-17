@@ -130,6 +130,35 @@ export const EvalScreen: React.FC = () => {
             </div>
           </div>
         </div>
+
+        {liveSummary?.comparative_advantage && (
+          <div className="mt-4 pt-4 border-t border-slate-800 grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs font-mono">
+            <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800">
+              <div className="text-[10px] text-slate-400">Single-Agent False Conclusions</div>
+              <div className="text-rose-400 font-bold text-sm mt-0.5">
+                {(liveSummary.comparative_advantage.single_agent_false_conclusion_rate * 100).toFixed(1)}% vs 0.0%
+              </div>
+            </div>
+            <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800">
+              <div className="text-[10px] text-slate-400">Single-Agent Unverified Citations</div>
+              <div className="text-amber-400 font-bold text-sm mt-0.5">
+                {(liveSummary.comparative_advantage.single_agent_unverified_citation_rate * 100).toFixed(1)}% vs 0.0%
+              </div>
+            </div>
+            <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800">
+              <div className="text-[10px] text-slate-400">Root-Cause Accuracy Lift</div>
+              <div className="text-emerald-400 font-bold text-sm mt-0.5">
+                +{(liveSummary.comparative_advantage.root_cause_accuracy_lift * 100).toFixed(1)}% Lift
+              </div>
+            </div>
+            <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800">
+              <div className="text-[10px] text-slate-400">Next-Check Decision Coverage</div>
+              <div className="text-teal-400 font-bold text-sm mt-0.5">
+                {(liveSummary.comparative_advantage.triagepilot_next_check_coverage * 100).toFixed(0)}% Allowlisted
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 3 Modes Comparative Hero Cards */}

@@ -314,6 +314,21 @@ class Planner:
             files = re.findall(r"[\w/]+\.py", ctx.message)
             return None, {"dev_steer_focus": files or [ctx.message]}
 
+        if ctx.source == "EVIDENCE_UPDATE":
+            txn_ids = re.findall(r"TXN-\d+", ctx.message, re.IGNORECASE)
+            files = re.findall(r"[\w/]+\.py", ctx.message)
+            upgraded = TicketClass.CODE_DEFECT if (txn_ids or files) else None
+            return upgraded, {
+                "evidence_update": {
+                    "message": ctx.message,
+                    "transaction_ids": txn_ids,
+                    "focus_files": files,
+                    "invalidated_card_ids": list(ctx.invalidated_card_ids),
+                    "corrected_facts": dict(ctx.corrected_facts),
+                },
+                "dev_steer_focus": files or [ctx.message],
+            }
+
         return None, {}
 
     # ------------------------------------------------------------------

@@ -30,24 +30,24 @@
 
 ---
 
-## 🔍 Act 3: 4-Way Cross-Examination, Multimodal Vision OCR & Prompt Injection Guard (1:25 – 2:20)
+## 🔍 Act 3: 4-Way Cross-Examination, 3-Tier Evidence Truth & Next Useful Check (1:25 – 2:15)
 
-**[Visual: Switch back to `Preset Scenarios`, select `#1 · TCK-1001` (`S01: Same-day transfers rejected after 4 PM IST`) and `#5 · TCK-6006` (`S06: Transfer blocked at INR 1,00,000 + Vision OCR`), and click `Investigate Incident`.]**
+**[Visual: Switch back to `Queue`, select `#1 · TCK-1001` (`S01: Same-day transfers rejected after 4 PM IST`) and `#5 · TCK-6006` (`S06: Transfer blocked at INR 1,00,000 + Vision OCR`), and click `Analyze Incident`.]**
 
 **Voiceover:**
-> *"On **Ticket #1 (`TCK-1001`)**, look at **Step 2 — 4-Way Reality Cross-Examination Matrix**: the client claims transfers failed since Monday 9 AM, but TriagePilot™ flags a `TIME_MISMATCH`—proving from logs and Git history that the regression started Tuesday at 4:02 PM IST due to a UTC vs `Asia/Kolkata` timezone bug in `app/transfers/cutoff.py`.*
+> *"On **Ticket #1 (`TCK-1001`)**, look at **Step 2 — 4-Way Reality Cross-Check**: the client claims transfers failed since Monday 9 AM, but TriagePilot™ flags a `TIME_MISMATCH`—proving from logs and Git history that the regression started Tuesday at 4:02 PM IST due to a UTC vs `Asia/Kolkata` timezone bug in `app/transfers/cutoff.py`, graded **`CAUSE_REPRODUCED`** (`GATE: REPRODUCED IN FIXTURE`), and recommends allowlisted check **`CHK-REPRO-CUTOFF`**.*
 >
-> *On **Ticket #5 (`TCK-6006`)**, TriagePilot™ passes the customer's attached UI error screenshot to **Gemini 2.5 Flash Vision OCR**, extracts `TXN-6001` and runbook `DOC-LIMITS-01`, and proves a `>=` boundary bug in `app/limits/daily_limit.py`.*
+> *On **Ticket #5 (`TCK-6006`)**, TriagePilot™ passes the customer's attached UI error screenshot to **Gemini 2.5 Flash Vision OCR**, extracts `TXN-6001` and runbook `DOC-LIMITS-01`, downgrades the newer innocent `httpx` commit to **`SOURCE_VALIDATED`** so it cannot support a false conclusion, and pins the `>=` boundary bug in `app/limits/daily_limit.py`.*
 >
 > *And on **Ticket #4 (`TCK-4004`)**, Stage 1 quarantines an adversarial log prompt injection (`[INJECTION_QUARANTINED]`) while **Gemini 2.5 Pro** detects a `STALE_DOC_FLAG` and `BEHAVIOUR_MISMATCH` between runbook `DOC-SMS-01` and `app/notifications/sms.py`."*
 
 ---
 
-## 🔒 Act 4: Principled Abstention, Maker-Checker Sign-Off & SHA-256 Ledger (2:20 – 3:00)
+## 🔒 Act 4: Principled Abstention, Contradictory Evidence Withdrawal & Runnable Ablation (2:15 – 3:00)
 
-**[Visual: Select `#8 · TCK-1111` (`S11: Underspecified ticket -> Abstain -> Turn-2 Resume`), click `Ingest Client Clarification & Resume Triage`, approve write-back (`COMMITTED • ISS-xxxx`), then switch to `Evaluation & Benchmark` and `System Architecture`.]**
+**[Visual: Select `#8 · TCK-1111` (`S11: Underspecified ticket -> Abstain -> Turn-2 Resume`), click `Ingest Client Clarification & Resume Triage`, then click the `Contradictory Evidence` tab to demonstrate `WithdrawnConclusion` (`Rev #1 → Rev #2`), approve write-back (`COMMITTED • ISS-xxxx`), and switch to `Evaluation & Benchmark`.]**
 
 **Voiceover:**
-> *"When a ticket is underspecified like **Ticket #8 (`TCK-1111`)**, our mathematical trust formula scores `0.22 LOW`, triggers **Principled Abstention**, locks write-back, and asks 2 discriminating questions. Once the client replies, Turn-2 resumes automatically to `0.81 HIGH` trust.*
+> *"When a ticket is underspecified like **Ticket #8 (`TCK-1111`)**, our provenance-deduplicated trust formula scores `0.22 LOW` (`GATE: NEED EVIDENCE`), triggers **Principled Abstention**, locks write-back, and selects **`CHK-CLARIFY-CLIENT`**. Once the client replies, Turn-2 resolves the root cause.*
 >
-> *Every conclusion is gated by **Maker-Checker** approval bound to `report_revision` and `report_hash`, persisted as a real engineering issue (`ISS-*`) via `LiveWriteAdapter`, and sealed in our **Firestore SHA-256 Hash-Chained Audit Ledger**—achieving **8/8 (100%) Root-Cause Hit Rate and 0.0% False Conclusions on live Vertex AI**."*
+> *And if late-arriving contradictory telemetry arrives in the **Contradictory Evidence** tab (`EVIDENCE_UPDATE`), TriagePilot™ explicitly **withdraws its prior conclusion**, increments `report_revision`, invalidates any prior approval on the superseded report, and seals the withdrawal in our **Firestore SHA-256 Hash-Chained Audit Ledger**—outperforming our runnable Single-Agent Baseline (`50.0%` false conclusions → **`0.0%` false conclusions** and **`100%` root-cause accuracy across all 8 scenarios**)."*

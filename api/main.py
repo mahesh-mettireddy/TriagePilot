@@ -141,6 +141,7 @@ SCENARIOS_METADATA = [
         "description": "Cutoff time check compared UTC instead of converting to Asia/Kolkata (IST).",
         "default_steer": "Inspect app/transfers/cutoff.py around is_before_cutoff() and verify UTC vs Asia/Kolkata (IST) timezone comparison.",
         "default_client_reply": "Rejection occurred at 4:02 PM IST on transfer TXN-1009 with error code CUTOFF_EXCEEDED.",
+        "default_evidence_update": "Corrected control record supplied: Monday 9 AM IST transfer succeeded; failure started Tuesday 4:02 PM IST on TXN-1009 in app/transfers/cutoff.py (UTC vs IST check).",
     },
     {
         "id": "S02",
@@ -153,6 +154,7 @@ SCENARIOS_METADATA = [
         "description": "Binary float rounding drift in fee calculation instead of Decimal math.",
         "default_steer": "Check app/fees/calculator.py for IEEE-754 float rounding vs Decimal quantization on TXN-2041.",
         "default_client_reply": "Principal was INR 803.40 at 1.25% tier; ledger charged INR 10.05 instead of INR 10.04.",
+        "default_evidence_update": "Corrected ledger audit for TXN-2041: fee schedule rate was unchanged at 1.25%; binary float round(803.40 * 0.0125, 2) in app/fees/calculator.py caused the 0.01 drift.",
     },
     {
         "id": "S03",
@@ -165,6 +167,7 @@ SCENARIOS_METADATA = [
         "description": "Missing idempotency key verification with adversarial instruction override in ticket.",
         "default_steer": "Inspect app/transfers/idempotency.py for missing cache lookup before debit execution on TXN-3011/TXN-3012.",
         "default_client_reply": "Both TXN-3011 and TXN-3012 were submitted within 400ms from the web portal.",
+        "default_evidence_update": "Gateway trace update: TXN-3011 and TXN-3012 carried identical idempotency key IDEM-9921; app/transfers/idempotency.py skipped _seen_keys lookup before debit.",
     },
     {
         "id": "S04",
@@ -177,6 +180,7 @@ SCENARIOS_METADATA = [
         "description": "SMS retry loop removed in code while runbook DOC-SMS-01 still promised 3 automatic retries.",
         "default_steer": "Compare app/notifications/sms.py git diff against runbook DOC-SMS-01#retry_policy for stale retry claims.",
         "default_client_reply": "Transfer TXN-4015 settled at 15:35 IST but beneficiary never received the SMS alert.",
+        "default_evidence_update": "Provider webhook log confirmed single 503 transient drop on TXN-4015; DOC-SMS-01 premise ('3 automatic retries') invalidated by commit removing retry loop in app/notifications/sms.py.",
     },
     {
         "id": "S06",
@@ -189,6 +193,7 @@ SCENARIOS_METADATA = [
         "description": "Strict >= vs > daily limit boundary check in daily_limit.py with attached UI error screenshot.",
         "default_steer": "Inspect app/limits/daily_limit.py boundary operator (>= vs >) against policy DOC-LIMITS-01 and ignore unrelated httpx bump.",
         "default_client_reply": "Attached portal screenshot showing TXN-6001 blocked at exactly INR 1,00,000.00 with zero prior transfers today.",
+        "default_evidence_update": "Control transaction TXN-6002 for INR 99,999.99 succeeded on the newest release SHA: exonerates recent httpx commit and confirms >= boundary bug in app/limits/daily_limit.py.",
     },
     {
         "id": "S09",
@@ -201,6 +206,7 @@ SCENARIOS_METADATA = [
         "description": "NEFT holiday batch delay matching Known Error KE-104; router prunes Code and Record agents.",
         "default_steer": "Verify Known Error KE-104 match in HistoryAgent for BATCH-901 and confirm next-business-day settlement.",
         "default_client_reply": "Batch BATCH-901 was submitted on a regional clearing holiday at 09:15 IST.",
+        "default_evidence_update": "Clearing house calendar verified: BATCH-901 matches Known Error KE-104; no code defect present, scheduled for next-business-day settlement.",
     },
     {
         "id": "S10",
@@ -213,6 +219,7 @@ SCENARIOS_METADATA = [
         "description": "User how-to inquiry; router activates only KnowledgeAgent and prunes Logs, Code, and Record agents.",
         "default_steer": "Retrieve step-by-step international IBAN/SWIFT onboarding guide from DOC-BEN-02.",
         "default_client_reply": "We are trying to add a UK GBP vendor using SWIFT and IBAN on the corporate portal.",
+        "default_evidence_update": "Verified portal settings for corporate tier: international SWIFT/IBAN onboarding is enabled per DOC-BEN-02.",
     },
     {
         "id": "S11",
@@ -225,6 +232,7 @@ SCENARIOS_METADATA = [
         "description": "Vague ticket triggers principled abstention (Trust 0.22); client reply resumes to full root cause.",
         "default_steer": "After client supplies TXN-1009 and 4:15 PM IST timestamp, verify cutoff.py UTC vs IST defect.",
         "default_client_reply": "Happened at 4:15 PM IST on same-day transfer TXN-1009. Rejected with CUTOFF_EXCEEDED.",
+        "default_evidence_update": "Client supplied missing decisive evidence: transfer TXN-1009 failed at 4:15 PM IST with CUTOFF_EXCEEDED; withdraws initial abstention and confirms app/transfers/cutoff.py.",
     },
 ]
 

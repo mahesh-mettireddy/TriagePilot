@@ -27,6 +27,22 @@ export const EvidenceCardItem: React.FC<EvidenceCardItemProps> = ({
 }) => {
   const isVerified = card.verification?.status === 'verified';
   const isDropped = card.verification?.status === 'dropped';
+  const evLevel = card.verification?.evidence_level;
+
+  const evidenceLevelBadges: Record<string, { label: string; class: string }> = {
+    CAUSE_REPRODUCED: {
+      label: 'CAUSE REPRODUCED',
+      class: 'bg-emerald-950/90 text-emerald-300 border-emerald-400/50',
+    },
+    CLAIM_SUPPORTED: {
+      label: 'CLAIM SUPPORTED',
+      class: 'bg-teal-950/90 text-teal-300 border-teal-500/40',
+    },
+    SOURCE_VALIDATED: {
+      label: 'SOURCE VALIDATED',
+      class: 'bg-sky-950/90 text-sky-300 border-sky-500/40',
+    },
+  };
 
   const stanceBadges: Record<string, { label: string; class: string }> = {
     supports: { label: 'SUPPORTS', class: 'bg-teal-950/90 text-teal-300 border-teal-500/35' },
@@ -46,6 +62,7 @@ export const EvidenceCardItem: React.FC<EvidenceCardItemProps> = ({
   const stance = stanceBadges[card.stance] || { label: card.stance, class: 'bg-slate-800 text-slate-300' };
   const src = sourceMeta[card.source_type] || { label: card.source_type.toUpperCase(), icon: FileCode, color: 'text-slate-400' };
   const SrcIcon = src.icon;
+  const evBadge = evLevel ? evidenceLevelBadges[evLevel] : undefined;
 
   const proofLabel =
     card.source_type === 'code' && card.pointer?.path
@@ -74,7 +91,7 @@ export const EvidenceCardItem: React.FC<EvidenceCardItemProps> = ({
       }`}
     >
       <div>
-        {/* Top bar: ID, Source Type, Stance, Verification Status */}
+        {/* Top bar: ID, Source Type, Stance, Verification & Truth Tier */}
         <div className="flex items-center justify-between gap-2 mb-2">
           <div className="flex items-center gap-1.5 flex-wrap">
             <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-950 text-slate-200 border border-slate-700">
@@ -96,8 +113,13 @@ export const EvidenceCardItem: React.FC<EvidenceCardItemProps> = ({
 
           <div className="shrink-0">
             {isVerified ? (
-              <span className="flex items-center gap-1 text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-emerald-950/90 text-emerald-300 border border-emerald-500/40">
-                <CheckCircle2 className="w-3 h-3 text-emerald-400" /> VERIFIED
+              <span
+                className={`flex items-center gap-1 text-[10px] font-mono font-bold px-2 py-0.5 rounded-md border ${
+                  evBadge ? evBadge.class : 'bg-emerald-950/90 text-emerald-300 border-emerald-500/40'
+                }`}
+              >
+                <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                {evBadge ? evBadge.label : 'VERIFIED'}
               </span>
             ) : isDropped ? (
               <span className="flex items-center gap-1 text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-rose-950/90 text-rose-300 border border-rose-500/40">

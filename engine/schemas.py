@@ -45,6 +45,20 @@ class VerificationStatus(str, Enum):
     DROPPED = "dropped"
 
 
+class EvidenceLevel(str, Enum):
+    UNVERIFIED = "UNVERIFIED"
+    SOURCE_VALIDATED = "SOURCE_VALIDATED"
+    CLAIM_SUPPORTED = "CLAIM_SUPPORTED"
+    CAUSE_REPRODUCED = "CAUSE_REPRODUCED"
+
+
+class GateOutcome(str, Enum):
+    NEED_EVIDENCE = "NEED_EVIDENCE"
+    SUPPORTED_HYPOTHESIS = "SUPPORTED_HYPOTHESIS"
+    REPRODUCED_IN_FIXTURE = "REPRODUCED_IN_FIXTURE"
+    BLOCKED = "BLOCKED"
+
+
 class ContradictionKind(str, Enum):
     TIME_MISMATCH = "TIME_MISMATCH"
     BEHAVIOUR_MISMATCH = "BEHAVIOUR_MISMATCH"
@@ -68,10 +82,12 @@ class PolicyAction(str, Enum):
 
 
 class HumanContext(BaseModel):
-    source: Literal["CLIENT_REPLY", "DEV_STEER"]
+    source: Literal["CLIENT_REPLY", "DEV_STEER", "EVIDENCE_UPDATE"]
     message: str = Field(..., max_length=1000)
     parent_investigation_id: Optional[str] = None
     pinned_card_ids: List[str] = Field(default_factory=list)
+    invalidated_card_ids: List[str] = Field(default_factory=list)
+    corrected_facts: Dict[str, Any] = Field(default_factory=dict)
 
 
 class InvestigationCreateRequest(BaseModel):
@@ -123,6 +139,9 @@ class PlannerLLMOutput(BaseModel):
 class VerificationResult(BaseModel):
     status: VerificationStatus = VerificationStatus.PENDING
     reason: Optional[str] = None
+    evidence_level: EvidenceLevel = EvidenceLevel.UNVERIFIED
+    provenance_key: Optional[str] = None
+    limitations: Optional[str] = None
 
 
 class EvidenceCard(BaseModel):
@@ -157,6 +176,7 @@ class Hypothesis(BaseModel):
     supporting_card_ids: List[str] = Field(default_factory=list)
     contradicting_card_ids: List[str] = Field(default_factory=list)
     score: float = 0.0
+    evidence_level: EvidenceLevel = EvidenceLevel.SOURCE_VALIDATED
 
 
 class TrustComponents(BaseModel):
@@ -166,6 +186,7 @@ class TrustComponents(BaseModel):
     c_time: float = 0.0
     p_contra: float = 0.0
     p_unver: float = 0.0
+    unique_provenance_count: int = 0
 
 
 class TrustSummary(BaseModel):
@@ -174,6 +195,31 @@ class TrustSummary(BaseModel):
     policy_action: PolicyAction
     components: TrustComponents
     rationale: str
+    gate_outcome: GateOutcome = GateOutcome.NEED_EVIDENCE
+    gate_reasons: List[str] = Field(default_factory=list)
+
+
+class NextCheck(BaseModel):
+    check_id: str
+    title: str
+    target_system: str
+    purpose: str
+    required_inputs: List[str] = Field(default_factory=list)
+    discriminates_hypotheses: List[str] = Field(default_factory=list)
+    expected_outcomes: List[str] = Field(default_factory=list)
+    effort_level: Literal["low", "medium", "high"] = "low"
+    status: Literal["recommended", "completed", "blocked_missing_input"] = "recommended"
+
+
+class WithdrawnConclusion(BaseModel):
+    parent_investigation_id: str
+    prior_report_revision: int
+    prior_report_hash: str
+    withdrawn_hypothesis: str
+    withdrawn_culprit_files: List[str] = Field(default_factory=list)
+    withdrawal_reason: str
+    invalidated_by: str
+    withdrawn_at: str
 
 
 class ClientQuestion(BaseModel):
@@ -298,6 +344,10 @@ class ReportOutput(BaseModel):
     jira_draft: Optional[JiraDraft] = None
     kb_gap: Optional[KBGap] = None
     suggested_diagnostic_queries: List[str] = Field(default_factory=list)
+    next_check: Optional[NextCheck] = None
+    candidate_checks: List[NextCheck] = Field(default_factory=list)
+    withdrawn_conclusion: Optional[WithdrawnConclusion] = None
+    parent_investigation_id: Optional[str] = None
     decision: HumanDecision = Field(default_factory=HumanDecision)
     audit_ref: str
     execution: ExecutionMetadata = Field(default_factory=ExecutionMetadata)
@@ -335,6 +385,7 @@ class SSEEvent(BaseModel):
         "adk_orchestration",
         "policy_halted",
         "writeback_blocked",
+        "conclusion_withdrawn",
         "error",
     ]
     data: Dict[str, Any]

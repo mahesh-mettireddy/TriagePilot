@@ -516,15 +516,25 @@ class FixtureCodeAdapter(CodePort):
             return None
 
     def _read_file_at_sha(self, path: str, sha: Optional[str]) -> str:
-        """Read file content at an explicit commit SHA."""
+        """Read file content at an explicit commit SHA (thread-safe across concurrent evaluations)."""
         if self._repo is None or not sha:
             raise FileNotFoundError("Pinned git repository or commit SHA is unavailable")
-        try:
-            commit = self._repo.commit(sha)
-            blob = commit.tree / path
-            return blob.data_stream.read().decode("utf-8", errors="replace")
-        except Exception as exc:
-            raise FileNotFoundError(f"Cannot read {path} at commit {sha}") from exc
+        norm_path = path.replace("\\", "/")
+        lock = getattr(self, "_lock", None)
+        if lock is None:
+            import threading
+            lock = threading.RLock()
+            self._lock = lock
+        with lock:
+            try:
+                return self._repo.git.show(f"{sha}:{norm_path}")
+            except Exception:
+                try:
+                    commit = self._repo.commit(sha)
+                    blob = commit.tree / norm_path
+                    return blob.data_stream.read().decode("utf-8", errors="replace")
+                except Exception as exc:
+                    raise FileNotFoundError(f"Cannot read {path} at commit {sha}") from exc
 
     def search_code(self, query: str, limit: int = 10) -> list[dict[str, Any]]:
         """Grep-style search across all tracked files, prioritizing domain modules."""

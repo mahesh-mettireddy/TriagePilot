@@ -66,10 +66,30 @@ export const ProofModal: React.FC<ProofModalProps> = ({ card, onClose }) => {
           {/* Verification Reason (if dropped or verified) */}
           {card.verification?.reason && (
             <div className={`p-3 rounded-lg border ${isVerified ? 'bg-emerald-950/30 border-emerald-800/50 text-emerald-200' : 'bg-rose-950/30 border-rose-800/50 text-rose-200'}`}>
-              <span className="font-semibold text-xs uppercase tracking-wide block mb-1">
-                {isVerified ? 'Verifier Assertion' : 'Drop Reason (Hallucination / Staleness Deflection)'}
-              </span>
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+                <span className="font-semibold text-xs uppercase tracking-wide">
+                  {isVerified ? 'Verifier Assertion & Evidentiary Tier' : 'Drop Reason (Hallucination / Staleness Deflection)'}
+                </span>
+                {card.verification?.evidence_level && (
+                  <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded bg-slate-950 text-teal-300 border border-teal-500/40">
+                    TIER: {card.verification.evidence_level}
+                  </span>
+                )}
+              </div>
               <p className="text-xs leading-normal">{card.verification.reason}</p>
+              {card.verification?.provenance_key && (
+                <div className="mt-1.5 pt-1.5 border-t border-emerald-800/40 text-[11px] font-mono text-teal-300/90">
+                  Deduplication Provenance Key: <span className="text-slate-200">{card.verification.provenance_key}</span>
+                </div>
+              )}
+              {card.verification?.limitations && (
+                <div className="mt-2 pt-1.5 border-t border-emerald-800/40 text-[11px] text-amber-200/90 space-y-0.5">
+                  <span className="font-semibold uppercase text-[10px] text-amber-300 block">
+                    Evidentiary Scope &amp; Limitations:
+                  </span>
+                  <div>• {card.verification.limitations}</div>
+                </div>
+              )}
             </div>
           )}
 

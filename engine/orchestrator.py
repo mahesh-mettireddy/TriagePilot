@@ -64,6 +64,7 @@ from engine.schemas import (
     TicketClass,
     TicketDTO,
     TrustSummary,
+    WithdrawnConclusion,
 )
 from engine.trust import compute_trust
 from engine.verifier import verify_cards
@@ -94,6 +95,7 @@ class InvestigationManager:
         self._closed_investigations: set[str] = set()
         self._active_tasks: dict[str, asyncio.Task[None]] = {}
         self._failed_investigations: dict[str, str] = {}
+        self._superseded_investigations: dict[str, str] = {}
         self._adapters = get_adapters()
         self._planner = get_planner()
         self._store = get_investigation_store()
@@ -743,6 +745,72 @@ class InvestigationManager:
             and trust.policy_action
             not in {PolicyAction.ABSTAIN, PolicyAction.ESCALATE_SECURITY}
         )
+
+        # Step 8b: Versioned Evidence-Change & Premise-Invalidation Handling
+        if req.human_context and req.human_context.parent_investigation_id:
+            parent_id = req.human_context.parent_investigation_id
+            parent_report = self.get_report(parent_id)
+            report.parent_investigation_id = parent_id
+            if parent_report is not None:
+                report.report_revision = parent_report.report_revision + 1
+                self._superseded_investigations[parent_id] = investigation_id
+                # Invalidate any prior approval on the parent report because new evidence arrived
+                if parent_report.decision.status == "approved":
+                    parent_report.decision = parent_report.decision.model_copy(
+                        update={
+                            "status": "rejected",
+                            "reason": f"Withdrawn & superseded by revision {report.report_revision} ({investigation_id}) after new evidence",
+                        }
+                    )
+                parent_report.write_back_allowed = False
+                self._investigations[parent_id] = parent_report
+                self._store.save_report(parent_report)
+
+                prior_stmt = (
+                    parent_report.probable_root_cause.statement
+                    if parent_report.probable_root_cause
+                    else f"Prior policy state: {parent_report.trust.policy_action.value} ({parent_report.trust.rationale})"
+                )
+                prior_files = (
+                    list(parent_report.probable_root_cause.culprit_files)
+                    if parent_report.probable_root_cause
+                    else []
+                )
+                new_stmt = (
+                    report.probable_root_cause.statement
+                    if report.probable_root_cause
+                    else f"Updated policy state: {report.trust.policy_action.value}"
+                )
+                # Populate WithdrawnConclusion whenever EVIDENCE_UPDATE or DEV_STEER/CLIENT_REPLY revises the premise/verdict
+                if (
+                    req.human_context.source == "EVIDENCE_UPDATE"
+                    or prior_stmt != new_stmt
+                    or parent_report.trust.policy_action != report.trust.policy_action
+                ):
+                    report.withdrawn_conclusion = WithdrawnConclusion(
+                        parent_investigation_id=parent_id,
+                        prior_report_revision=parent_report.report_revision,
+                        prior_report_hash=parent_report.report_hash,
+                        withdrawn_hypothesis=prior_stmt[:300],
+                        withdrawn_culprit_files=prior_files,
+                        withdrawal_reason=(
+                            f"Premise updated via {req.human_context.source}: {req.human_context.message[:220]}"
+                        ),
+                        invalidated_by=req.human_context.source,
+                        withdrawn_at=_utc_now(),
+                    )
+                    audit.append(
+                        investigation_id,
+                        "conclusion_withdrawn",
+                        report.withdrawn_conclusion.model_dump(mode="json"),
+                    )
+                    await self._emit_event(
+                        investigation_id,
+                        seq,
+                        "conclusion_withdrawn",
+                        report.withdrawn_conclusion.model_dump(mode="json"),
+                    )
+
         report = bind_report_revision(report)
         self._investigations[investigation_id] = report
         self._store.save_report(report)
@@ -754,6 +822,7 @@ class InvestigationManager:
                 "summary": report.summary,
                 "verified_claims_count": report.verified_claims_count,
                 "dropped_claims_count": report.dropped_claims_count,
+                "report_revision": report.report_revision,
             },
         )
         await self._emit_event(
@@ -794,6 +863,20 @@ class InvestigationManager:
         history = self.get_events(investigation_id)
         self._event_histories.setdefault(investigation_id, history)
         seq = [len(history)]
+
+        if investigation_id in self._superseded_investigations:
+            newer_id = self._superseded_investigations[investigation_id]
+            reason = (
+                f"Approval is stale: investigation {investigation_id} (revision {report.report_revision}) "
+                f"was withdrawn and superseded by {newer_id} after new evidence."
+            )
+            await self._emit_event(
+                investigation_id,
+                seq,
+                "writeback_blocked",
+                {"reason": reason},
+            )
+            raise ValueError(reason)
 
         if report.decision.status == "approved":
             if report.decision.decision_id == decision.decision_id and decision.decision_id:

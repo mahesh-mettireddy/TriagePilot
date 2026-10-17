@@ -793,7 +793,10 @@ def get_scenario_adapters(scenario_id: str, default_adapters: dict[str, Any]) ->
     investigations through the Live Connector suite.
     """
     if re.fullmatch(r"S\d{2}", scenario_id or ""):
-        return default_adapters
+        return {
+            **default_adapters,
+            "code": FixtureCodeAdapter(),
+        }
 
     return {
         "history": LiveGitHistoryAdapter(),

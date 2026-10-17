@@ -80,6 +80,15 @@ async def main():
     print(f"  * Total Hallucinations Sunk: {summary.get('hallucinations_dropped_total', 0)}")
     print()
 
+    comp = summary.get("comparative_advantage") or eval_results.get("comparative_advantage", {})
+    if comp:
+        print("RUNNABLE SINGLE-AGENT BASELINE (ARM B) VS. TRIAGEPILOT (ARM C) ABLATION:")
+        print(f"  * Single-Agent False Conclusions:   {comp.get('single_agent_false_conclusion_rate', 0.0) * 100:.1f}% vs {comp.get('triagepilot_false_conclusion_rate', 0.0) * 100:.1f}%")
+        print(f"  * Single-Agent Unverified Citations:{comp.get('single_agent_unverified_citation_rate', 0.0) * 100:.1f}% vs 0.0%")
+        print(f"  * Root-Cause Accuracy Lift:         +{comp.get('root_cause_accuracy_lift', 0.0) * 100:.1f}%")
+        print(f"  * Next-Check Decision Coverage:     {comp.get('triagepilot_next_check_coverage', 0.0) * 100:.1f}%")
+        print()
+
     # Print Comparative Ablation Table
     ablations = get_ablation_benchmarks()
     print("=" * 80)

@@ -137,6 +137,16 @@ def _build_report_deterministic(
             diag_queries.append(f"git log --oneline -10 {f}")
             diag_queries.append(f"git blame {f}")
 
+    # --- Structured Next Useful Check selection ---
+    from engine.next_check import select_next_checks
+    next_check, candidate_checks = select_next_checks(
+        ticket=ticket,
+        verified_cards=verified_cards,
+        contradictions=contradictions,
+        hypotheses=hypotheses,
+        trust=trust,
+    )
+
     # --- Owner team (from profile or ticket) ---
     owner_team = "team-payments"  # default
     if ticket.product_hint == "notifications":
@@ -170,6 +180,13 @@ def _build_report_deterministic(
         jira_draft=jira_draft,
         kb_gap=kb_gap,
         suggested_diagnostic_queries=diag_queries,
+        next_check=next_check,
+        candidate_checks=candidate_checks,
+        parent_investigation_id=(
+            ticket.human_context.parent_investigation_id
+            if ticket.human_context and ticket.human_context.parent_investigation_id
+            else None
+        ),
         decision=HumanDecision(),
         audit_ref=f"audit:{investigation_id}",
         write_back_allowed=(

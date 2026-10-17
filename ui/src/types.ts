@@ -18,6 +18,18 @@ export type Stance = 'supports' | 'contradicts' | 'context';
 
 export type VerificationStatus = 'pending' | 'verified' | 'dropped';
 
+export type EvidenceLevel =
+  | 'UNVERIFIED'
+  | 'SOURCE_VALIDATED'
+  | 'CLAIM_SUPPORTED'
+  | 'CAUSE_REPRODUCED';
+
+export type GateOutcome =
+  | 'NEED_EVIDENCE'
+  | 'SUPPORTED_HYPOTHESIS'
+  | 'REPRODUCED_IN_FIXTURE'
+  | 'BLOCKED';
+
 export type ContradictionKind =
   | 'TIME_MISMATCH'
   | 'BEHAVIOUR_MISMATCH'
@@ -35,10 +47,12 @@ export type PolicyAction =
   | 'ESCALATE_SECURITY';
 
 export interface HumanContext {
-  source: 'CLIENT_REPLY' | 'DEV_STEER';
+  source: 'CLIENT_REPLY' | 'DEV_STEER' | 'EVIDENCE_UPDATE';
   message: string;
   parent_investigation_id?: string;
   pinned_card_ids?: string[];
+  invalidated_card_ids?: string[];
+  corrected_facts?: Record<string, any>;
 }
 
 export interface InvestigationCreateRequest {
@@ -79,6 +93,9 @@ export interface AgentRoutingPlan {
 export interface VerificationResult {
   status: VerificationStatus;
   reason?: string;
+  evidence_level?: EvidenceLevel;
+  provenance_key?: string;
+  limitations?: string;
 }
 
 export interface EvidenceCard {
@@ -110,6 +127,7 @@ export interface Hypothesis {
   supporting_card_ids: string[];
   contradicting_card_ids: string[];
   score: number;
+  evidence_level?: EvidenceLevel;
 }
 
 export interface TrustComponents {
@@ -119,6 +137,7 @@ export interface TrustComponents {
   c_time: number;
   p_contra: number;
   p_unver: number;
+  unique_provenance_count?: number;
 }
 
 export interface TrustSummary {
@@ -127,6 +146,31 @@ export interface TrustSummary {
   policy_action: PolicyAction;
   components: TrustComponents;
   rationale: string;
+  gate_outcome?: GateOutcome;
+  gate_reasons?: string[];
+}
+
+export interface NextCheck {
+  check_id: string;
+  title: string;
+  target_system: string;
+  purpose: string;
+  required_inputs: string[];
+  discriminates_hypotheses: string[];
+  expected_outcomes: string[];
+  effort_level: 'low' | 'medium' | 'high';
+  status: 'recommended' | 'completed' | 'blocked_missing_input';
+}
+
+export interface WithdrawnConclusion {
+  parent_investigation_id: string;
+  prior_report_revision: number;
+  prior_report_hash: string;
+  withdrawn_hypothesis: string;
+  withdrawn_culprit_files: string[];
+  withdrawal_reason: string;
+  invalidated_by: string;
+  withdrawn_at: string;
 }
 
 export interface ClientQuestion {
@@ -198,6 +242,10 @@ export interface ReportOutput {
   jira_draft?: JiraDraft;
   kb_gap?: KBGap;
   suggested_diagnostic_queries: string[];
+  next_check?: NextCheck;
+  candidate_checks?: NextCheck[];
+  withdrawn_conclusion?: WithdrawnConclusion;
+  parent_investigation_id?: string;
   decision: HumanDecision;
   audit_ref: string;
   execution: ExecutionMetadata;
@@ -250,6 +298,7 @@ export interface ScenarioMeta {
   attachments?: string[];
   default_steer?: string;
   default_client_reply?: string;
+  default_evidence_update?: string;
 }
 
 export interface ReadinessStatus {

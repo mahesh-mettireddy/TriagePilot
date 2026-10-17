@@ -63,10 +63,30 @@ export const TrustMeter: React.FC<TrustMeterProps> = ({ trust }) => {
     ESCALATE_SECURITY: { label: 'POLICY: ESCALATE SECURITY', class: 'bg-purple-900/60 text-purple-300 border-purple-500/40' },
   };
 
+  const gateOutcomeBadges: Record<string, { label: string; class: string }> = {
+    REPRODUCED_IN_FIXTURE: {
+      label: 'GATE: REPRODUCED IN FIXTURE',
+      class: 'bg-emerald-950/80 text-emerald-300 border-emerald-400/40',
+    },
+    SUPPORTED_HYPOTHESIS: {
+      label: 'GATE: SUPPORTED HYPOTHESIS',
+      class: 'bg-teal-950/80 text-teal-300 border-teal-400/40',
+    },
+    NEED_EVIDENCE: {
+      label: 'GATE: NEED EVIDENCE',
+      class: 'bg-amber-950/80 text-amber-300 border-amber-400/40',
+    },
+    BLOCKED: {
+      label: 'GATE: BLOCKED',
+      class: 'bg-rose-950/80 text-rose-300 border-rose-400/40',
+    },
+  };
+
   const currentPolicy = policyActionBadges[trust.policy_action] || {
     label: `POLICY: ${trust.policy_action}`,
     class: 'bg-slate-800 text-slate-300 border-slate-700',
   };
+  const currentGate = trust.gate_outcome ? gateOutcomeBadges[trust.gate_outcome] : undefined;
 
   const comps = trust.components || {
     c_ver: 0,
@@ -75,23 +95,29 @@ export const TrustMeter: React.FC<TrustMeterProps> = ({ trust }) => {
     c_time: 0,
     p_contra: 0,
     p_unver: 0,
+    unique_provenance_count: 0,
   };
 
   return (
     <div className={`rounded-xl border ${bandConfig.border} ${bandConfig.bg} p-4 transition-all duration-300 shadow-lg backdrop-blur-sm`}>
       {/* Top Header */}
-      <div className="flex items-center justify-between gap-3 mb-2">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
         <div className="flex items-center gap-2">
           <Icon className={`w-5 h-5 ${bandConfig.color}`} />
           <span className="font-semibold text-sm text-slate-200">
-            Evidentiary Trust Score
+            Evidentiary Trust Gate
           </span>
           <span className={`text-[11px] font-bold px-2 py-0.5 rounded border ${bandConfig.border} ${bandConfig.color} bg-slate-900/80`}>
             {trust.band} BAND
           </span>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {currentGate && (
+            <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border ${currentGate.class}`}>
+              {currentGate.label}
+            </span>
+          )}
           <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border ${currentPolicy.class}`}>
             {currentPolicy.label}
           </span>
@@ -114,6 +140,18 @@ export const TrustMeter: React.FC<TrustMeterProps> = ({ trust }) => {
         {trust.rationale || bandConfig.desc}
       </p>
 
+      {/* Hard Conclusion Gate Reasons */}
+      {trust.gate_reasons && trust.gate_reasons.length > 0 && (
+        <div className="mt-2 pt-2 border-t border-slate-800/70 text-[11px] font-mono text-slate-300 space-y-0.5">
+          {trust.gate_reasons.map((reason, idx) => (
+            <div key={idx} className="flex items-start gap-1.5">
+              <span className="text-teal-400">▸</span>
+              <span>{reason}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Expand formula toggle */}
       <div className="mt-3 pt-2 border-t border-slate-800/80">
         <button
@@ -132,7 +170,9 @@ export const TrustMeter: React.FC<TrustMeterProps> = ({ trust }) => {
             <div className="p-2 rounded bg-slate-900/60 border border-slate-800">
               <div className="text-[10px] text-slate-500">c_ver (max 0.35)</div>
               <div className="text-teal-400 font-bold mt-0.5">+{comps.c_ver.toFixed(2)}</div>
-              <div className="text-[9px] text-slate-400">Verified Fraction</div>
+              <div className="text-[9px] text-slate-400">
+                Deduplicated ({comps.unique_provenance_count ?? 0} unique)
+              </div>
             </div>
 
             <div className="p-2 rounded bg-slate-900/60 border border-slate-800">

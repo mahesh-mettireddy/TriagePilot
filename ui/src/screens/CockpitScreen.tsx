@@ -329,6 +329,14 @@ export const CockpitScreen: React.FC = () => {
     });
   };
 
+  const handleEvidenceUpdate = (evidenceText: string) => {
+    handleStartInvestigation({
+      source: 'EVIDENCE_UPDATE',
+      message: evidenceText,
+      parent_investigation_id: investigationId || undefined,
+    });
+  };
+
   const handleCopyCustomerDraft = () => {
     if (!report?.customer_reply_draft) return;
     navigator.clipboard.writeText(report.customer_reply_draft);
@@ -1242,7 +1250,7 @@ export const CockpitScreen: React.FC = () => {
                 )}
               </div>
 
-              {/* Operator Action Controls (Maker-Checker / Engineer Steer / Client Follow-Up) */}
+              {/* Operator Action Controls (Maker-Checker / Engineer Steer / Client Follow-Up / Contradictory Evidence) */}
               <PilotMiddleControls
                 report={report}
                 investigationId={investigationId}
@@ -1250,6 +1258,7 @@ export const CockpitScreen: React.FC = () => {
                 onDecisionSubmitted={(updated) => setReport(updated)}
                 onSimulateReply={handleSimulateReply}
                 onDevSteer={handleDevSteer}
+                onEvidenceUpdate={handleEvidenceUpdate}
                 isStreaming={isInvestigating}
               />
             </div>
@@ -1272,10 +1281,31 @@ export const CockpitScreen: React.FC = () => {
                 </div>
               )}
 
+              {/* 0. Withdrawn / Superseded Prior Conclusion Banner (when contradictory evidence or re-investigation updates verdict) */}
+              {report?.withdrawn_conclusion && (
+                <div className="bg-rose-950/40 border border-rose-500/50 rounded-xl p-3.5 shadow-xl space-y-2 text-xs">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-bold text-rose-300 uppercase tracking-wider flex items-center gap-1.5">
+                      <AlertCircle className="w-4 h-4 text-rose-400" />
+                      Prior Conclusion Withdrawn (Rev #{report.withdrawn_conclusion.prior_report_revision} → Rev #{report.report_revision})
+                    </span>
+                    <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded bg-rose-950 text-rose-200 border border-rose-500/40">
+                      PRIOR APPROVAL INVALIDATED ({report.withdrawn_conclusion.invalidated_by})
+                    </span>
+                  </div>
+                  <div className="p-2 rounded bg-slate-950/80 border border-rose-500/30 text-[11px] text-slate-400 line-through">
+                    Superseded Statement: {report.withdrawn_conclusion.withdrawn_hypothesis}
+                  </div>
+                  <p className="text-[11px] text-rose-200 leading-relaxed">
+                    <strong>Reason:</strong> {report.withdrawn_conclusion.withdrawal_reason}
+                  </p>
+                </div>
+              )}
+
               {/* 1. Verified Root-Cause Verdict (Hero Outcome Card at Top!) */}
               {report && (
                 <div className="bg-slate-900/90 border border-teal-500/40 rounded-xl p-4 shadow-xl space-y-3">
-                  <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                  <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-800">
                     <div className="flex items-center gap-2">
                       <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-mono text-[10px] font-bold">
                         STEP 3
@@ -1284,10 +1314,18 @@ export const CockpitScreen: React.FC = () => {
                         {report.probable_root_cause ? 'Verified Root Cause' : 'Triage Resolution'}
                       </span>
                     </div>
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-slate-950 text-slate-400 border border-slate-800">
+                        Rev #{report.report_revision || 1}
+                      </span>
                       <span className="font-mono text-[10px] px-2 py-0.5 rounded bg-slate-950 text-slate-300 border border-slate-800">
                         {report.owner_team}
                       </span>
+                      {report.probable_root_cause?.evidence_level && (
+                        <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-500/40">
+                          {report.probable_root_cause.evidence_level}
+                        </span>
+                      )}
                       {report.probable_root_cause && (
                         <span className="font-mono text-xs font-bold text-teal-300 bg-teal-950 px-2 py-0.5 rounded border border-teal-500/30">
                           {(report.probable_root_cause.score * 100).toFixed(0)}% Match
@@ -1351,6 +1389,43 @@ export const CockpitScreen: React.FC = () => {
                       {report.kb_gap.issue}
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* 1b. Allowlisted Recommended Next Useful Check (Decision-First Operator Card) */}
+              {report?.next_check && (
+                <div className="bg-slate-900/90 border border-sky-500/40 rounded-xl p-4 shadow-xl space-y-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-800">
+                    <div className="flex items-center gap-2">
+                      <Terminal className="w-4 h-4 text-sky-400" />
+                      <span className="font-bold text-xs uppercase tracking-wider text-slate-100">
+                        Next Useful Check
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded bg-sky-950 text-sky-300 border border-sky-500/40">
+                        {report.next_check.check_id}
+                      </span>
+                      <span className="font-mono text-[10px] px-2 py-0.5 rounded bg-slate-950 text-slate-300 border border-slate-800">
+                        {report.next_check.target_system} • {report.next_check.effort_level.toUpperCase()} EFFORT
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="text-xs font-bold text-slate-100">
+                    {report.next_check.title}
+                  </div>
+
+                  <div className="space-y-1 text-[11px] text-slate-300 leading-relaxed">
+                    <div>
+                      <strong className="text-sky-300">Purpose:</strong> {report.next_check.purpose}
+                    </div>
+                    {report.next_check.expected_outcomes?.length > 0 && (
+                      <div>
+                        <strong className="text-emerald-300">Expected Signal:</strong> {report.next_check.expected_outcomes.join(' | ')}
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
 

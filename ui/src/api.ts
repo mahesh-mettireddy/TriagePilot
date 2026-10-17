@@ -189,7 +189,7 @@ export function subscribeToEvents(
     'hypothesis_update', 'trust_update', 'abstain', 'report_ready',
     'awaiting_approval', 'awaiting_human', 'decision', 'write_back_done',
     'replay_fallback', 'tool_budget_rejected', 'adk_orchestration',
-    'policy_halted', 'writeback_blocked', 'error',
+    'policy_halted', 'writeback_blocked', 'conclusion_withdrawn', 'error',
   ];
   eventTypes.forEach((eventType) => source.addEventListener(eventType, handleMessage));
   source.onmessage = handleMessage;

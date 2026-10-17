@@ -24,13 +24,32 @@ from engine.schemas import (
     Contradiction,
     ContradictionKind,
     EvidenceCard,
+    EvidenceLevel,
     Hypothesis,
     SourceType,
+    Stance,
 )
 from engine.ai_runtime import get_ai_runtime
 from engine.masking import quarantine_prompt_injection
 
 logger = logging.getLogger(__name__)
+
+
+def _infer_hypothesis_evidence_level(
+    supporting_ids: list[str],
+    verified_cards: list[EvidenceCard],
+) -> EvidenceLevel:
+    card_map = {c.card_id: c for c in verified_cards}
+    levels = [
+        card_map[cid].verification.evidence_level
+        for cid in supporting_ids
+        if cid in card_map
+    ]
+    if EvidenceLevel.CAUSE_REPRODUCED in levels:
+        return EvidenceLevel.CAUSE_REPRODUCED
+    if EvidenceLevel.CLAIM_SUPPORTED in levels:
+        return EvidenceLevel.CLAIM_SUPPORTED
+    return EvidenceLevel.SOURCE_VALIDATED
 
 
 # ---------------------------------------------------------------------------
@@ -88,7 +107,16 @@ def _fallback_hypotheses(
     hypotheses: list[Hypothesis] = []
     semantic_contradictions: list[Contradiction] = []
 
-    code_cards = [c for c in verified_cards if c.source_type == SourceType.CODE]
+    raw_code_cards = [c for c in verified_cards if c.source_type == SourceType.CODE]
+    # Filter out innocent/unrelated context commits (like httpx version bumps) when
+    # a genuine causal code card is present.
+    causal_code_cards = [
+        c for c in raw_code_cards
+        if c.stance != Stance.CONTEXT
+        and "httpx" not in f"{c.snippet} {c.claim} {c.pointer.get('path', '')}".lower()
+        and "requirements.txt" not in str(c.pointer.get("path", "")).lower()
+    ]
+    code_cards = causal_code_cards if causal_code_cards else raw_code_cards
     log_cards = [c for c in verified_cards if c.source_type == SourceType.LOG]
     doc_cards = [c for c in verified_cards if c.source_type == SourceType.DOC]
     record_cards = [c for c in verified_cards if c.source_type == SourceType.RECORD]
@@ -99,6 +127,7 @@ def _fallback_hypotheses(
         primary_code = code_cards[0]
         supporting = [primary_code.card_id]
         supporting.extend(c.card_id for c in log_cards[:2])
+        supporting.extend(c.card_id for c in record_cards[:1])
 
         # Preserve order of culprit files with primary card's file first
         culprit_files = list(dict.fromkeys(
@@ -119,13 +148,15 @@ def _fallback_hypotheses(
             ),
             culprit_files=culprit_files,
             culprit_commit=culprit_commit,
-            supporting_card_ids=supporting,
+            supporting_card_ids=list(dict.fromkeys(supporting)),
             contradicting_card_ids=[c.card_id for c in contradictions[:1] if hasattr(c, 'card_id')],
             score=0.88 if log_cards else 0.78,
+            evidence_level=_infer_hypothesis_evidence_level(supporting, verified_cards),
         ))
 
     # --- Hypothesis 2: From record mismatch (if applicable) ---
     if record_cards and log_cards:
+        supp_h2 = [record_cards[0].card_id, log_cards[0].card_id]
         hypotheses.append(Hypothesis(
             hypothesis_id="H2",
             statement=(
@@ -133,8 +164,9 @@ def _fallback_hypotheses(
                 f"Log evidence: {log_cards[0].claim}"
             ),
             culprit_files=[],
-            supporting_card_ids=[record_cards[0].card_id, log_cards[0].card_id],
+            supporting_card_ids=supp_h2,
             score=0.55,
+            evidence_level=_infer_hypothesis_evidence_level(supp_h2, verified_cards),
         ))
 
     # --- Hypothesis 3: Known error match (if applicable) ---
@@ -146,6 +178,7 @@ def _fallback_hypotheses(
                 culprit_files=[],
                 supporting_card_ids=[tc.card_id],
                 score=0.88 if not code_cards else 0.50,
+                evidence_level=EvidenceLevel.CLAIM_SUPPORTED,
             ))
             break
 
@@ -309,6 +342,7 @@ async def _llm_hypotheses(
                 supporting_card_ids=supporting,
                 contradicting_card_ids=contradicting,
                 score=float(h.get("score", 0.5)),
+                evidence_level=_infer_hypothesis_evidence_level(supporting, verified_cards),
             ))
 
         for sc in semantic_contras_raw[:4]:
