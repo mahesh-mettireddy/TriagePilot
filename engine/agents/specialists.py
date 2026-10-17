@@ -456,10 +456,11 @@ class CodeAgent:
         entities = plan.extracted_entities
 
         # Build search query from modules hint or ticket text
-        dev_steer_files = entities.get("dev_steer_focus", [])
+        dev_steer_files = [f for f in entities.get("dev_steer_focus", []) if isinstance(f, str) and len(f) <= 48]
         modules = entities.get("modules", [])
+        fallback_hint = self._extract_code_hint(text)
         search_query = dev_steer_files[0] if dev_steer_files else (
-            modules[0] if modules else self._extract_code_hint(text)
+            modules[0] if modules else fallback_hint
         )
 
         await _emit(queue, _make_event(seq, "tool_started", {
@@ -468,8 +469,14 @@ class CodeAgent:
 
         # 1. Search for relevant code
         try:
+            def _search_with_fallback() -> list[dict[str, Any]]:
+                hits = self._port.search_code(search_query, limit=5)
+                if not hits and search_query != fallback_hint:
+                    hits = self._port.search_code(fallback_hint, limit=5)
+                return hits
+
             results = await asyncio.get_event_loop().run_in_executor(
-                None, lambda: self._port.search_code(search_query, limit=5)
+                None, _search_with_fallback
             )
             for hit in results:
                 pointer_data: dict[str, Any] = {
@@ -481,13 +488,33 @@ class CodeAgent:
                 }
                 if hit.get("commit_sha"):
                     pointer_data["commit_sha"] = hit["commit_sha"]
+                if hit.get("is_live_diff"):
+                    pointer_data["is_live_diff"] = True
+                    if hit.get("before_line"):
+                        pointer_data["before_line"] = hit["before_line"]
+                    if hit.get("commit_message"):
+                        pointer_data["commit_message"] = hit["commit_message"]
+                if hit.get("is_live_diff"):
+                    before_part = f"from `{str(hit['before_line'])[:38]}` " if hit.get("before_line") else ""
+                    after_part = str(hit.get("snippet", "")).splitlines()[-1][:42]
+                    sha_short = str(hit.get("commit_sha", ""))[:7]
+                    msg_short = str(hit.get("commit_message", ""))[:32]
+                    msg_part = f" (@{sha_short}: {msg_short})" if msg_short else f" (@{sha_short})"
+                    claim_text = (
+                        f"Live Git Edit {hit.get('path','')}:{hit.get('line_number','')} — "
+                        f"{before_part}-> `{after_part}`{msg_part}"
+                    )[:200]
+                else:
+                    claim_text = (
+                        f"Code match in {hit.get('path','')}:{hit.get('line_number','')} — {hit.get('snippet','')[:80]}"
+                    )[:200]
                 card = _pending_card(
                     card_id=_card_id(self.PREFIX, counter),
                     specialist="CodeAgent",
                     source_type=SourceType.CODE,
                     pointer=pointer_data,
                     snippet=hit.get("snippet", "")[:400],
-                    claim=f"Code match in {hit.get('path','')}:{hit.get('line_number','')} — {hit.get('snippet','')[:80]}",
+                    claim=claim_text[:200],
                     stance=Stance.SUPPORTS,
                     observed_at=hit.get("commit_date"),
                 )
@@ -500,16 +527,20 @@ class CodeAgent:
             "agent": "CodeAgent", "tool": "search_code", "cards": len(cards)
         }))
 
-        # 2. Git log for the suspected file (if found) — enrich cards with commit timestamp
+        # 2. Git log for suspected files (enrich every matched file path with its latest commit SHA & timestamp)
         if cards:
-            suspected_path = cards[0].pointer.get("path", "")
-            if suspected_path:
+            unique_paths: list[str] = []
+            for c in cards:
+                p = c.pointer.get("path", "")
+                if p and p not in unique_paths:
+                    unique_paths.append(p)
+            for suspected_path in unique_paths[:3]:
                 await _emit(queue, _make_event(seq, "tool_started", {
                     "agent": "CodeAgent", "tool": "git_log", "path": suspected_path
                 }))
                 try:
                     commits = await asyncio.get_event_loop().run_in_executor(
-                        None, lambda: self._port.git_log(suspected_path, n=5)
+                        None, lambda p=suspected_path: self._port.git_log(p, n=5)
                     )
                     if commits:
                         latest = commits[0]

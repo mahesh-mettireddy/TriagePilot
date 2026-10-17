@@ -103,6 +103,42 @@ export async function syncLiveRepo(commitMessage?: string): Promise<Record<strin
   return res.json();
 }
 
+export async function getLiveEditableFiles(): Promise<{
+  files: Array<{ path: string; label: string; content: string }>;
+  git_workspace: Record<string, any>;
+}> {
+  const res = await fetch(`${API_BASE}/live/files`);
+  if (!res.ok) throw new Error('Failed to load live editable files');
+  return res.json();
+}
+
+export async function commitLiveFileEdit(payload: {
+  path: string;
+  content: string;
+  commit_message?: string;
+}): Promise<Record<string, any>> {
+  const res = await fetch(`${API_BASE}/live/commit`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Failed to commit live code edit');
+  }
+  return res.json();
+}
+
+export async function resetLiveRepo(): Promise<Record<string, any>> {
+  const res = await fetch(`${API_BASE}/live/reset`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ restore_demo_app_files: true }),
+  });
+  if (!res.ok) throw new Error('Failed to reset live repository');
+  return res.json();
+}
+
 export async function triggerLiveTransaction(payload: {
   amount?: number;
   transfer_type?: string;

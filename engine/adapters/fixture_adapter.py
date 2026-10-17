@@ -578,21 +578,37 @@ class FixtureCodeAdapter(CodePort):
             except OSError:
                 continue
             path_matches = query_lower in rel_path.lower() or (query_stem and query_stem in rel_path.lower())
+            in_docstring = False
+            file_hits: list[tuple[int, dict[str, Any]]] = []
             for i, line in enumerate(lines, start=1):
                 stripped = line.strip()
-                if not stripped or stripped.startswith(('"""', "'''")):
+                if stripped.startswith(('"""', "'''")):
+                    if stripped.count('"""') == 1 and stripped.count("'''") == 0:
+                        in_docstring = not in_docstring
+                    elif stripped.count("'''") == 1 and stripped.count('"""') == 0:
+                        in_docstring = not in_docstring
+                    continue
+                if in_docstring or not stripped or stripped.startswith("#"):
                     continue
                 if query_lower in line.lower() or (query_stem and query_stem in line.lower()) or (
                     path_matches and any(k in line for k in ("def ", "if ", "return ", "raise "))
                 ):
-                    results.append({
-                        "path": rel_path,
-                        "line_number": i,
-                        "snippet": stripped[:200],
-                        "sha": sha,
-                    })
-                    if len(results) >= limit:
-                        return results
+                    # Prioritize executable logic lines (if / raise / return / =) over class/import/def headers
+                    line_prio = 0 if any(k in stripped for k in ("if ", "raise ", "return ", "round(", ">=", "utcnow")) else 1
+                    file_hits.append((
+                        line_prio,
+                        {
+                            "path": rel_path,
+                            "line_number": i,
+                            "snippet": stripped[:200],
+                            "sha": sha,
+                        },
+                    ))
+            file_hits.sort(key=lambda item: (item[0], item[1]["line_number"]))
+            for _, hit_dict in file_hits:
+                results.append(hit_dict)
+                if len(results) >= limit:
+                    return results
         return results
 
     def _head_sha(self) -> str:
@@ -748,10 +764,14 @@ class FixtureWriteAdapter(WritePort):
     """
 
     def create_issue(self, jira_draft: dict[str, Any]) -> dict[str, Any]:
+        import hashlib
         import engine.audit as audit
         inv_id = jira_draft.get("investigation_id", "unknown")
-        audit.append(inv_id, "write_back_jira", {"action": "create_issue", "title": jira_draft.get("title")})
-        mock_key = f"TRIAGE-{abs(hash(jira_draft.get('title', ''))) % 9000 + 1000}"
+        title = jira_draft.get("title", "")
+        report_hash = jira_draft.get("report_hash", "")
+        digest = hashlib.sha256(f"fixture:{inv_id}:{report_hash}:{title}".encode("utf-8")).hexdigest()[:6].upper()
+        mock_key = f"TRIAGE-{digest}"
+        audit.append(inv_id, "write_back_jira", {"action": "create_issue", "title": title, "issue_key": mock_key})
         return {
             "issue_key": mock_key,
             "url": f"https://jira.example.com/browse/{mock_key}",
@@ -759,10 +779,13 @@ class FixtureWriteAdapter(WritePort):
         }
 
     def post_comment(self, ticket_id: str, comment: str) -> dict[str, Any]:
+        import hashlib
         import engine.audit as audit
-        audit.append(ticket_id, "write_back_comment", {"ticket_id": ticket_id, "length": len(comment)})
+        digest = hashlib.sha256(f"comment:{ticket_id}:{comment}".encode("utf-8")).hexdigest()[:6].upper()
+        comment_id = f"CMT-{digest}"
+        audit.append(ticket_id, "write_back_comment", {"ticket_id": ticket_id, "comment_id": comment_id, "length": len(comment)})
         return {
-            "comment_id": f"CMT-{abs(hash(comment)) % 9000 + 1000}",
+            "comment_id": comment_id,
             "status": "fixture_posted",
         }
 

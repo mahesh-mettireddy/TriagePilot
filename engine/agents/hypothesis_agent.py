@@ -97,19 +97,17 @@ Respond with ONLY the JSON, no markdown fences.
 def _fallback_hypotheses(
     verified_cards: list[EvidenceCard],
     contradictions: list[Contradiction],
+    human_context: Optional[Any] = None,
 ) -> tuple[list[Hypothesis], list[Contradiction]]:
     """
-    Build hypotheses without an LLM using pattern matching.
-
-    This works well for the golden scenarios because the evidence structure
-    is predictable.
+    Build hypotheses without an LLM using pattern matching, dynamically
+    incorporating human-in-the-loop context (DEV_STEER, CLIENT_REPLY,
+    EVIDENCE_UPDATE) and live developer Git commit diffs.
     """
     hypotheses: list[Hypothesis] = []
     semantic_contradictions: list[Contradiction] = []
 
     raw_code_cards = [c for c in verified_cards if c.source_type == SourceType.CODE]
-    # Filter out innocent/unrelated context commits (like httpx version bumps) when
-    # a genuine causal code card is present.
     causal_code_cards = [
         c for c in raw_code_cards
         if c.stance != Stance.CONTEXT
@@ -122,14 +120,50 @@ def _fallback_hypotheses(
     record_cards = [c for c in verified_cards if c.source_type == SourceType.RECORD]
     ticket_cards = [c for c in verified_cards if c.source_type == SourceType.TICKET]
 
-    # --- Hypothesis 1: Primary from code + log evidence ---
+    ctx_source = getattr(human_context, "source", None) if human_context else None
+    ctx_msg = str(getattr(human_context, "message", "") or "").strip() if human_context else ""
+    ctx_lower = ctx_msg.lower()
+
+    # Check if EVIDENCE_UPDATE explicitly overrides the technical root cause (e.g. compliance hold / operational override)
+    if ctx_source == "EVIDENCE_UPDATE" and any(
+        k in ctx_lower for k in ("compliance hold", "hold_compliance", "manual hold", "not cutoff", "before cutoff")
+    ):
+        supp_ids = [c.card_id for c in (log_cards[:2] + record_cards[:1] + code_cards[:1])] or [
+            c.card_id for c in verified_cards[:2]
+        ]
+        hypotheses.append(Hypothesis(
+            hypothesis_id="H1",
+            statement=(
+                f"[REVISED AFTER CONTRADICTORY EVIDENCE UPDATE] Prior code-defect premise withdrawn. "
+                f"Updated telemetry confirms: {ctx_msg[:220]}"
+            ),
+            culprit_files=[],
+            culprit_commit=None,
+            supporting_card_ids=supp_ids,
+            contradicting_card_ids=[c.card_id for c in code_cards[:1]],
+            score=0.64,
+            evidence_level=EvidenceLevel.CLAIM_SUPPORTED,
+        ))
+
+    # --- Hypothesis 1: Primary from code + log evidence (plus HITL steer / live edit awareness) ---
     if code_cards:
+        # If DEV_STEER or EVIDENCE_UPDATE mentioned a specific .py file, prioritize that card first!
+        if ctx_msg:
+            steered_cards = [
+                c for c in code_cards
+                if any(
+                    tok in str(c.pointer.get("path", "")).lower()
+                    for tok in re.findall(r"[a-z0-9_]+\.py", ctx_lower)
+                )
+            ]
+            if steered_cards:
+                code_cards = steered_cards + [c for c in code_cards if c not in steered_cards]
+
         primary_code = code_cards[0]
         supporting = [primary_code.card_id]
         supporting.extend(c.card_id for c in log_cards[:2])
         supporting.extend(c.card_id for c in record_cards[:1])
 
-        # Preserve order of culprit files with primary card's file first
         culprit_files = list(dict.fromkeys(
             c.pointer.get("path", "") for c in code_cards if c.pointer.get("path")
         ))
@@ -140,17 +174,60 @@ def _fallback_hypotheses(
                 culprit_commit = sha
                 break
 
-        hypotheses.append(Hypothesis(
-            hypothesis_id="H1",
-            statement=(
+        # Check if this is a live developer fix where COMPLETED record + '>' boundary check succeeded
+        rec_completed = any("status=completed" in c.snippet.lower() for c in record_cards)
+        is_live_fix = bool(
+            primary_code.pointer.get("is_live_diff")
+            and rec_completed
+            and ">" in primary_code.snippet
+            and ">=" not in primary_code.snippet
+        )
+
+        if is_live_fix and ctx_msg:
+            stmt = (
+                f"[LIVE GIT FIX + HITL VERIFIED] Developer feedback (\"{ctx_msg[:70]}\") & commit "
+                f"@{str(culprit_commit or '')[:7]} in {', '.join(culprit_files)} resolved the defect ({primary_code.claim}). "
+                f"Live payment completed with zero policy contradictions."
+            )
+        elif is_live_fix:
+            stmt = (
+                f"[LIVE GIT FIX VERIFIED] Developer commit @{str(culprit_commit or '')[:7]} in "
+                f"{', '.join(culprit_files)} resolved the boundary defect ({primary_code.claim}). "
+                f"Live payment completed with zero policy contradictions."
+            )
+        elif ctx_source == "DEV_STEER":
+            is_confirmation = any(
+                k in ctx_lower for k in ("confirm", "fix", "changed", "resolved", "patch", "verified", "approve", ">")
+            )
+            tag = "HITL ENGINEER CONFIRMATION" if is_confirmation else "STEERED BY ENGINEER"
+            stmt = (
+                f"[{tag}: \"{ctx_msg[:90]}\"] Verified root cause in "
+                f"{', '.join(culprit_files) or 'target module'}: {primary_code.claim}"
+            )
+        elif ctx_source == "CLIENT_REPLY":
+            stmt = (
+                f"[RESUMED AFTER CLIENT CLARIFICATION: \"{ctx_msg[:90]}\"] Pinpointed root cause in "
+                f"{', '.join(culprit_files) or 'target module'}: {primary_code.claim}"
+            )
+        elif ctx_source == "EVIDENCE_UPDATE":
+            stmt = (
+                f"[UPDATED WITH NEW TELEMETRY: \"{ctx_msg[:90]}\"] Re-evaluated root cause in "
+                f"{', '.join(culprit_files) or 'target module'}: {primary_code.claim}"
+            )
+        else:
+            stmt = (
                 f"Root cause in {', '.join(culprit_files) or 'suspected module'}: "
                 f"{primary_code.claim}"
-            ),
+            )
+
+        hypotheses.append(Hypothesis(
+            hypothesis_id=f"H{len(hypotheses) + 1}",
+            statement=stmt,
             culprit_files=culprit_files,
             culprit_commit=culprit_commit,
             supporting_card_ids=list(dict.fromkeys(supporting)),
             contradicting_card_ids=[c.card_id for c in contradictions[:1] if hasattr(c, 'card_id')],
-            score=0.88 if log_cards else 0.78,
+            score=0.92 if (ctx_source in ("DEV_STEER", "CLIENT_REPLY") or is_live_fix) else (0.88 if log_cards else 0.78),
             evidence_level=_infer_hypothesis_evidence_level(supporting, verified_cards),
         ))
 
@@ -158,7 +235,7 @@ def _fallback_hypotheses(
     if record_cards and log_cards:
         supp_h2 = [record_cards[0].card_id, log_cards[0].card_id]
         hypotheses.append(Hypothesis(
-            hypothesis_id="H2",
+            hypothesis_id=f"H{len(hypotheses) + 1}",
             statement=(
                 f"Data inconsistency: {record_cards[0].claim}. "
                 f"Log evidence: {log_cards[0].claim}"
@@ -246,16 +323,17 @@ def _fallback_hypotheses(
 async def _llm_hypotheses(
     verified_cards: list[EvidenceCard],
     contradictions: list[Contradiction],
+    human_context: Optional[Any] = None,
 ) -> tuple[list[Hypothesis], list[Contradiction]]:
     """Use gemini-2.5-pro to generate hypotheses from verified evidence."""
     runtime = get_ai_runtime()
     if not runtime.status.configured:
-        return _fallback_hypotheses(verified_cards, contradictions)
+        return _fallback_hypotheses(verified_cards, contradictions, human_context=human_context)
 
     # Fast-path: if there are no verified CODE cards (e.g. HOW_TO_USER_ERROR,
     # KNOWN_ERROR, INSUFFICIENT_INFO), use deterministic builder immediately.
     if not any(c.source_type == SourceType.CODE for c in verified_cards):
-        return _fallback_hypotheses(verified_cards, contradictions)
+        return _fallback_hypotheses(verified_cards, contradictions, human_context=human_context)
 
     try:
         from google.genai import types  # type: ignore[import]
@@ -283,10 +361,17 @@ async def _llm_hypotheses(
             for c in contradictions
         ]
 
+        human_ctx_block = ""
+        if human_context is not None and getattr(human_context, "message", ""):
+            hc_src = getattr(human_context, "source", "DEV_STEER")
+            hc_msg = quarantine_prompt_injection(str(getattr(human_context, "message", "")), max_chars=240)
+            human_ctx_block = f"\n\n--- INTERACTIVE HITL OPERATOR INPUT ({hc_src}) ---\n{hc_msg}"
+
         prompt = (
             f"{_HYPOTHESIS_PROMPT}\n\n"
             f"--- VERIFIED EVIDENCE CARDS ---\n{json.dumps(cards_summary, indent=2)}\n\n"
-            f"--- DETERMINISTIC CONTRADICTIONS ---\n{json.dumps(contra_summary, indent=2)}\n---"
+            f"--- DETERMINISTIC CONTRADICTIONS ---\n{json.dumps(contra_summary, indent=2)}"
+            f"{human_ctx_block}\n---"
         )
 
         config_kwargs: dict[str, Any] = {
@@ -306,7 +391,7 @@ async def _llm_hypotheses(
             operation="hypothesis_reconciliation",
         )
         if raw is None:
-            return _fallback_hypotheses(verified_cards, contradictions)
+            return _fallback_hypotheses(verified_cards, contradictions, human_context=human_context)
         raw = re.sub(r"^```(?:json)?\s*", "", raw)
         raw = re.sub(r"\s*```$", "", raw)
         data = json.loads(raw)
@@ -322,7 +407,7 @@ async def _llm_hypotheses(
             hyp_list = data
             semantic_contras_raw = []
         else:
-            return _fallback_hypotheses(verified_cards, contradictions)
+            return _fallback_hypotheses(verified_cards, contradictions, human_context=human_context)
 
         valid_card_ids = {card.card_id for card in verified_cards}
         for h in hyp_list[:4]:
@@ -364,7 +449,9 @@ async def _llm_hypotheses(
                 note=sc.get("note", ""),
             ))
 
-        fallback_hyps, fallback_contras = _fallback_hypotheses(verified_cards, contradictions)
+        fallback_hyps, fallback_contras = _fallback_hypotheses(
+            verified_cards, contradictions, human_context=human_context
+        )
         if not hypotheses and verified_cards:
             return fallback_hyps, semantic_contras or fallback_contras
 
@@ -378,6 +465,10 @@ async def _llm_hypotheses(
                 primary.culprit_files = list(fb_primary.culprit_files[:1])
             if not primary.culprit_commit and fb_primary.culprit_commit:
                 primary.culprit_commit = fb_primary.culprit_commit
+            # When interactive HITL context or a live developer fix is active, prefer the
+            # deterministic HITL/live-fix statement so the human input is explicitly explained.
+            if human_context is not None or any(bool(c.pointer.get("is_live_diff")) for c in verified_cards):
+                primary.statement = fb_primary.statement
 
         existing_pairs = {(c.card_a, c.card_b) for c in semantic_contras}
         for fc in fallback_contras:
@@ -388,7 +479,7 @@ async def _llm_hypotheses(
 
     except Exception as exc:
         logger.warning("LLM hypothesis generation failed: %s — using fallback", exc)
-        return _fallback_hypotheses(verified_cards, contradictions)
+        return _fallback_hypotheses(verified_cards, contradictions, human_context=human_context)
 
 
 # ---------------------------------------------------------------------------
@@ -398,6 +489,7 @@ async def _llm_hypotheses(
 async def generate_hypotheses(
     verified_cards: list[EvidenceCard],
     contradictions: list[Contradiction],
+    human_context: Optional[Any] = None,
 ) -> tuple[list[Hypothesis], list[Contradiction]]:
     """
     Generate hypotheses and semantic contradictions.
@@ -409,5 +501,5 @@ async def generate_hypotheses(
         (hypotheses, semantic_contradictions)
     """
     if get_ai_runtime().status.configured:
-        return await _llm_hypotheses(verified_cards, contradictions)
-    return _fallback_hypotheses(verified_cards, contradictions)
+        return await _llm_hypotheses(verified_cards, contradictions, human_context=human_context)
+    return _fallback_hypotheses(verified_cards, contradictions, human_context=human_context)

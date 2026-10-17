@@ -613,7 +613,9 @@ class InvestigationManager:
             },
         )
         hypotheses, sem_contradictions = await generate_hypotheses(
-            verified_cards, det_contradictions
+            verified_cards,
+            det_contradictions,
+            human_context=ticket_dto.human_context,
         )
         all_contradictions = det_contradictions + sem_contradictions
         for sc in sem_contradictions:
@@ -634,12 +636,20 @@ class InvestigationManager:
             {"hypotheses": [h.model_dump(mode="json") for h in hypotheses]},
         )
 
+        parent_report_for_trust = (
+            self.get_report(req.human_context.parent_investigation_id)
+            if req.human_context and req.human_context.parent_investigation_id
+            else None
+        )
+
         # Step 7: Deterministic Trust Scorer & Policy Gate
         trust: TrustSummary = compute_trust(
             verified_cards=verified_cards,
             dropped_cards=dropped_cards,
             contradictions=all_contradictions,
             hypotheses=hypotheses,
+            human_context=ticket_dto.human_context,
+            parent_trust=parent_report_for_trust.trust if parent_report_for_trust else None,
         )
         policy_action = evaluate_policy_gate(
             ticket_class=plan.ticket_class,
@@ -894,10 +904,70 @@ class InvestigationManager:
                 )
                 raise ValueError(reason or "Approval rejected by policy")
 
+        # Apply operator edits (edited_summary / edited_customer_reply) on the server,
+        # re-run leak check on edited customer reply, and recompute report_hash
+        before_summary = report.summary
+        before_reply = report.customer_reply_draft
+        has_operator_edits = False
+        if decision.edited_summary is not None and decision.edited_summary.strip():
+            new_summary = decision.edited_summary.strip()
+            if new_summary != report.summary:
+                report.summary = new_summary
+                if report.jira_draft:
+                    report.jira_draft.description = new_summary
+                has_operator_edits = True
+
+        if decision.edited_customer_reply is not None and decision.edited_customer_reply.strip():
+            new_reply = decision.edited_customer_reply.strip()
+            if new_reply != report.customer_reply_draft:
+                from engine.leakcheck import check_customer_reply
+                from engine.schemas import LeakCheckResult as SchemaLeakCheckResult
+
+                raw_leak = check_customer_reply(new_reply)
+                leak_res = SchemaLeakCheckResult(passed=raw_leak.passed, notes=list(raw_leak.notes))
+                report.leak_check = leak_res
+                if not leak_res.passed:
+                    reason = (
+                        "Write-back blocked: operator-edited customer reply failed leak check ("
+                        + ", ".join(leak_res.notes)
+                        + ")."
+                    )
+                    await self._emit_event(
+                        investigation_id,
+                        seq,
+                        "writeback_blocked",
+                        {"reason": reason},
+                    )
+                    raise ValueError(reason)
+                report.customer_reply_draft = new_reply
+                has_operator_edits = True
+
+        if has_operator_edits:
+            report.report_revision += 1
+            report = bind_report_revision(report)
+            decision = decision.model_copy(
+                update={
+                    "report_revision": report.report_revision,
+                    "report_hash": report.report_hash,
+                }
+            )
+            audit.append(
+                investigation_id,
+                "operator_draft_edited",
+                {
+                    "by": decision.by,
+                    "new_revision": report.report_revision,
+                    "new_report_hash": report.report_hash,
+                    "summary_changed": before_summary != report.summary,
+                    "customer_reply_changed": before_reply != report.customer_reply_draft,
+                },
+            )
+
         # Client-supplied write_back_ref is never trusted.  The server creates
         # it only after the WritePort mutation succeeds.
         decision = decision.model_copy(update={"write_back_ref": None})
         report.decision = decision
+        self._investigations[investigation_id] = report
         self._store.save_report(report)
 
         await self._emit_event(
@@ -919,6 +989,7 @@ class InvestigationManager:
                     {
                         **report.jira_draft.model_dump(mode="json"),
                         "investigation_id": investigation_id,
+                        "report_hash": report.report_hash,
                     }
                 )
                 ref_info["jira"] = jira_res
@@ -931,6 +1002,7 @@ class InvestigationManager:
 
             decision.write_back_ref = json.dumps(ref_info)
             report.decision = decision
+            self._investigations[investigation_id] = report
             self._store.save_report(report)
             audit.append(investigation_id, "write_back_done", {"references": ref_info})
             await self._emit_event(

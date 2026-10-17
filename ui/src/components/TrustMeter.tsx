@@ -160,7 +160,7 @@ export const TrustMeter: React.FC<TrustMeterProps> = ({ trust }) => {
         >
           <span className="flex items-center gap-1.5">
             <Info className="w-3.5 h-3.5 text-teal-400" />
-            Inspect Trust Formula Breakdown: T = c_ver + c_div + c_spec + c_time - p_contra - p_unver
+            Inspect Trust Formula: T = 0.40·c_ver + 0.25·c_div + 0.20·c_spec + 0.15·c_time − 0.30·p_contra − 0.20·p_unver
           </span>
           {showBreakdown ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
         </button>
@@ -168,40 +168,58 @@ export const TrustMeter: React.FC<TrustMeterProps> = ({ trust }) => {
         {showBreakdown && (
           <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs font-mono bg-slate-950/90 p-3 rounded-lg border border-slate-800">
             <div className="p-2 rounded bg-slate-900/60 border border-slate-800">
-              <div className="text-[10px] text-slate-500">c_ver (max 0.35)</div>
-              <div className="text-teal-400 font-bold mt-0.5">+{comps.c_ver.toFixed(2)}</div>
+              <div className="text-[10px] text-slate-500">c_ver (weight 0.40)</div>
+              <div className="text-teal-400 font-bold mt-0.5">
+                +{(0.40 * comps.c_ver).toFixed(2)}{' '}
+                <span className="text-[10px] text-slate-400 font-normal">(raw {comps.c_ver.toFixed(2)})</span>
+              </div>
               <div className="text-[9px] text-slate-400">
                 Deduplicated ({comps.unique_provenance_count ?? 0} unique)
               </div>
             </div>
 
             <div className="p-2 rounded bg-slate-900/60 border border-slate-800">
-              <div className="text-[10px] text-slate-500">c_div (max 0.25)</div>
-              <div className="text-teal-400 font-bold mt-0.5">+{comps.c_div.toFixed(2)}</div>
+              <div className="text-[10px] text-slate-500">c_div (weight 0.25)</div>
+              <div className="text-teal-400 font-bold mt-0.5">
+                +{(0.25 * comps.c_div).toFixed(2)}{' '}
+                <span className="text-[10px] text-slate-400 font-normal">(raw {comps.c_div.toFixed(2)})</span>
+              </div>
               <div className="text-[9px] text-slate-400">Source Diversity</div>
             </div>
 
             <div className="p-2 rounded bg-slate-900/60 border border-slate-800">
-              <div className="text-[10px] text-slate-500">c_spec (max 0.20)</div>
-              <div className="text-teal-400 font-bold mt-0.5">+{comps.c_spec.toFixed(2)}</div>
+              <div className="text-[10px] text-slate-500">c_spec (weight 0.20)</div>
+              <div className="text-teal-400 font-bold mt-0.5">
+                +{(0.20 * comps.c_spec).toFixed(2)}{' '}
+                <span className="text-[10px] text-slate-400 font-normal">(raw {comps.c_spec.toFixed(2)})</span>
+              </div>
               <div className="text-[9px] text-slate-400">Specialist Coverage</div>
             </div>
 
             <div className="p-2 rounded bg-slate-900/60 border border-slate-800">
-              <div className="text-[10px] text-slate-500">c_time (max 0.20)</div>
-              <div className="text-teal-400 font-bold mt-0.5">+{comps.c_time.toFixed(2)}</div>
+              <div className="text-[10px] text-slate-500">c_time (weight 0.15)</div>
+              <div className="text-teal-400 font-bold mt-0.5">
+                +{(0.15 * comps.c_time).toFixed(2)}{' '}
+                <span className="text-[10px] text-slate-400 font-normal">(raw {comps.c_time.toFixed(2)})</span>
+              </div>
               <div className="text-[9px] text-slate-400">Time Correlation</div>
             </div>
 
             <div className="p-2 rounded bg-slate-900/60 border border-slate-800">
-              <div className="text-[10px] text-slate-500">p_contra (penalty)</div>
-              <div className="text-rose-400 font-bold mt-0.5">-{comps.p_contra.toFixed(2)}</div>
+              <div className="text-[10px] text-slate-500">p_contra (weight −0.30)</div>
+              <div className="text-rose-400 font-bold mt-0.5">
+                −{(0.30 * comps.p_contra).toFixed(2)}{' '}
+                <span className="text-[10px] text-slate-400 font-normal">(raw {comps.p_contra.toFixed(2)})</span>
+              </div>
               <div className="text-[9px] text-slate-400">Contradictions</div>
             </div>
 
             <div className="p-2 rounded bg-slate-900/60 border border-slate-800">
-              <div className="text-[10px] text-slate-500">p_unver (penalty)</div>
-              <div className="text-rose-400 font-bold mt-0.5">-{comps.p_unver.toFixed(2)}</div>
+              <div className="text-[10px] text-slate-500">p_unver (weight −0.20)</div>
+              <div className="text-rose-400 font-bold mt-0.5">
+                −{(0.20 * comps.p_unver).toFixed(2)}{' '}
+                <span className="text-[10px] text-slate-400 font-normal">(raw {comps.p_unver.toFixed(2)})</span>
+              </div>
               <div className="text-[9px] text-slate-400">Dropped/Unverified</div>
             </div>
           </div>

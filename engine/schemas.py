@@ -250,6 +250,8 @@ class HumanDecision(BaseModel):
     by: Optional[str] = None
     reason: Optional[str] = None
     edits_diff: Optional[str] = None
+    edited_summary: Optional[str] = None
+    edited_customer_reply: Optional[str] = None
     write_back_ref: Optional[str] = None
     # Approval binding is deliberately optional for backwards-compatible clients;
     # the API binds omitted values to the current report before executing a

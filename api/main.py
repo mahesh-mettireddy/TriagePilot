@@ -30,8 +30,10 @@ from engine.adapters.live_adapter import (
     execute_live_demo_transaction,
     get_connectors_health,
     get_live_issues,
+    list_live_editable_files,
     reset_live_workspace,
     sync_live_workspace,
+    update_and_commit_live_file,
 )
 from engine.adk_orchestration import ADK_AVAILABLE, describe_adk_swarm
 from engine.orchestrator import InvestigationManager, get_manager
@@ -512,10 +514,39 @@ async def list_live_issues() -> List[Dict[str, Any]]:
     return get_live_issues()
 
 
+@app.get("/api/live/files")
+async def get_live_editable_files() -> Dict[str, Any]:
+    """Return allowlisted Python source files in transfers-demo-app/app/ for live editing & git commit demos."""
+    return list_live_editable_files()
+
+
+@app.post("/api/live/commit")
+async def commit_live_file_edit(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Save an allowlisted Python source file in transfers-demo-app/app/ and commit it to the live Git workspace."""
+    file_path = str(payload.get("path", "")).strip()
+    content = str(payload.get("content", ""))
+    commit_message = payload.get("commit_message")
+    if not file_path or not content:
+        raise HTTPException(status_code=400, detail="Both 'path' and 'content' are required.")
+    try:
+        return update_and_commit_live_file(
+            file_path=file_path,
+            content=content,
+            commit_message=str(commit_message) if commit_message else None,
+        )
+    except SyntaxError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Python syntax error on line {exc.lineno}: {exc.msg}",
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.post("/api/live/reset")
 async def reset_live_repo(payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Reset the live Git workspace to the clean baseline commit."""
-    restore = bool((payload or {}).get("restore_demo_app_files", False))
+    restore = bool((payload or {}).get("restore_demo_app_files", True))
     return reset_live_workspace(restore_demo_app_files=restore)
 
 

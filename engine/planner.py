@@ -310,9 +310,24 @@ class Planner:
             }
 
         if ctx.source == "DEV_STEER":
-            # Extract file/module hints from the steer message
+            # Extract file/module hints from the steer message (either .py or domain module keywords)
             files = re.findall(r"[\w/]+\.py", ctx.message)
-            return None, {"dev_steer_focus": files or [ctx.message]}
+            low_msg = ctx.message.lower()
+            if not files:
+                if any(k in low_msg for k in ("daily_limit", "daily limit", "limit", "100000", "1,00,000", ">=")):
+                    files.append("daily_limit.py")
+                if any(k in low_msg for k in ("cutoff", "timezone", "utc", "ist", "4 pm", "16:00")):
+                    files.append("cutoff.py")
+                if any(k in low_msg for k in ("calculator", "fee", "rounding", "float", "decimal", "paisa")):
+                    files.append("calculator.py")
+                if any(k in low_msg for k in ("sms", "retry", "notification")):
+                    files.append("sms.py")
+                if any(k in low_msg for k in ("idempotenc", "duplicate", "twice")):
+                    files.append("idempotency.py")
+            return None, {
+                "dev_steer_focus": files,
+                "dev_steer_message": ctx.message,
+            }
 
         if ctx.source == "EVIDENCE_UPDATE":
             txn_ids = re.findall(r"TXN-\d+", ctx.message, re.IGNORECASE)
@@ -326,7 +341,7 @@ class Planner:
                     "invalidated_card_ids": list(ctx.invalidated_card_ids),
                     "corrected_facts": dict(ctx.corrected_facts),
                 },
-                "dev_steer_focus": files or [ctx.message],
+                "dev_steer_focus": files,
             }
 
         return None, {}

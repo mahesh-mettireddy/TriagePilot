@@ -64,7 +64,19 @@ _LIVE_REPO_DIR = _LIVE_DIR / "clientrepo"
 _BASELINE_BUNDLE = _DATA_DIR / "clientrepo.bundle"
 _BASELINE_CLIENT_REPO = _DATA_DIR / "clientrepo"
 _DEMO_APP_DIR = _REPO_ROOT / "transfers-demo-app"
-_BASELINE_HEAD_SHA = "288c17a"
+_BASELINE_HEAD_SHA = "61b344d"
+_BASELINE_SHAS = ("288c17a", "61b344d")
+
+_ALLOWLISTED_LIVE_FILES: dict[str, str] = {
+    "app/limits/daily_limit.py": "Daily Limit Enforcer (>= vs > Boundary)",
+    "app/transfers/cutoff.py": "Same-Day Cutoff Validator (UTC vs IST)",
+    "app/fees/calculator.py": "Fee Calculator (Float vs Decimal Rounding)",
+    "app/notifications/sms.py": "SMS Notification Dispatcher (Retry Loop)",
+}
+
+
+def _is_baseline_commit(sha: str) -> bool:
+    return bool(sha) and sha.startswith(_BASELINE_SHAS)
 
 
 def _utc_now() -> str:
@@ -174,11 +186,11 @@ def sync_live_workspace(commit_message: Optional[str] = None) -> dict[str, Any]:
         # Compute modified files relative to baseline commit if any live commits exist
         live_modified_files: list[str] = []
         for c in list(repo.iter_commits(max_count=5)):
-            if c.hexsha.startswith(_BASELINE_HEAD_SHA):
+            if _is_baseline_commit(c.hexsha):
                 break
             for fpath in c.stats.files.keys():
                 norm_f = str(fpath).replace("\\", "/")
-                if norm_f not in live_modified_files:
+                if norm_f in _ALLOWLISTED_LIVE_FILES and norm_f not in live_modified_files:
                     live_modified_files.append(norm_f)
 
         return {
@@ -188,7 +200,7 @@ def sync_live_workspace(commit_message: Optional[str] = None) -> dict[str, Any]:
             "head_message": head.message.strip(),
             "head_author": head.author.name,
             "head_date": head.committed_datetime.isoformat(),
-            "has_live_changes": not head.hexsha.startswith(_BASELINE_HEAD_SHA),
+            "has_live_changes": not _is_baseline_commit(head.hexsha),
             "live_modified_files": live_modified_files,
             "newly_committed_files": all_touched,
         }
@@ -481,7 +493,7 @@ class LiveGitCodeAdapter(FixtureCodeAdapter):
     def get_recent_diff_hits(self, limit: int = 5) -> list[dict[str, Any]]:
         """
         Inspect recent commits in the live repository (especially any commits
-        after baseline `288c17a`) and extract modified file paths and exact
+        after baseline `61b344d` / `288c17a`) and extract modified file paths and exact
         changed line numbers at `HEAD` SHA.
         """
         self.refresh()
@@ -493,7 +505,7 @@ class LiveGitCodeAdapter(FixtureCodeAdapter):
         try:
             commits = list(self._repo.iter_commits(max_count=5))
             for commit in commits:
-                if commit.hexsha.startswith(_BASELINE_HEAD_SHA) and hits:
+                if _is_baseline_commit(commit.hexsha):
                     break
                 if not commit.parents:
                     continue
@@ -502,12 +514,15 @@ class LiveGitCodeAdapter(FixtureCodeAdapter):
                     rel_path = (d.b_path or d.a_path or "").replace("\\", "/")
                     if not rel_path.endswith(".py") or rel_path.endswith("__init__.py"):
                         continue
+                    if rel_path not in _ALLOWLISTED_LIVE_FILES and not _is_baseline_commit(commit.hexsha):
+                        continue
                     patch_text = d.diff.decode("utf-8", errors="replace")
                     file_lines = self._read_file_at_sha(rel_path, head_sha).splitlines()
                     if not file_lines:
                         continue
 
                     added_lines: list[tuple[int, str]] = []
+                    removed_lines: list[str] = []
                     curr_new_line: Optional[int] = None
                     for raw_patch_line in patch_text.splitlines():
                         hm = re.match(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@", raw_patch_line)
@@ -522,29 +537,41 @@ class LiveGitCodeAdapter(FixtureCodeAdapter):
                                 added_lines.append((curr_new_line, code_str))
                             curr_new_line += 1
                         elif raw_patch_line.startswith("-") and not raw_patch_line.startswith("---"):
+                            old_str = raw_patch_line[1:].strip()
+                            if old_str and not old_str.startswith(("#", '"""', "'''")):
+                                removed_lines.append(old_str)
                             continue
                         else:
                             curr_new_line += 1
 
                     if added_lines:
-                        # Prefer lines with executable statements or domain logic
+                        # Prefer lines that start with executable Python statements over docstring text
                         best_line_no, best_line_text = added_lines[0]
+                        found_exec = False
                         for lno, candidate in added_lines:
-                            if any(k in candidate for k in ("raise ", "return ", "if ", "rate", "fee", "limit", "cutoff", "=")):
+                            if candidate.startswith(("if ", "elif ", "return ", "raise ", "for ", "while ")):
                                 best_line_no, best_line_text = lno, candidate
+                                found_exec = True
                                 break
+                        if not found_exec:
+                            for lno, candidate in added_lines:
+                                if any(k in candidate for k in ("raise ", "return ", "if ", "rate", "fee", "limit", "cutoff", "=")):
+                                    best_line_no, best_line_text = lno, candidate
+                                    break
                         # Verify against file_lines at HEAD
                         if 1 <= best_line_no <= len(file_lines):
                             best_line_text = file_lines[best_line_no - 1].strip() or best_line_text
+                        before_text = removed_lines[-1][:140] if removed_lines else ""
                         hits.append({
                             "path": rel_path,
                             "line_number": best_line_no,
                             "snippet": best_line_text[:200],
+                            "before_line": before_text,
                             "sha": head_sha,
                             "commit_sha": commit.hexsha,
                             "commit_date": commit.committed_datetime.isoformat(),
                             "commit_message": commit.message.strip(),
-                            "is_live_diff": not commit.hexsha.startswith(_BASELINE_HEAD_SHA),
+                            "is_live_diff": not _is_baseline_commit(commit.hexsha),
                         })
                         if len(hits) >= limit:
                             return hits
@@ -556,6 +583,14 @@ class LiveGitCodeAdapter(FixtureCodeAdapter):
         self.refresh()
         # First run standard search on the synced live repo
         standard_hits = super().search_code(query, limit=limit)
+        # Filter out generic FastAPI router wrappers (`app/main.py`, `app/transfers/service.py`)
+        # when specific domain modules (`daily_limit.py`, `cutoff.py`, `calculator.py`, `sms.py`) are matched
+        domain_standard = [
+            h for h in standard_hits
+            if h.get("path") not in ("app/main.py", "app/transfers/service.py")
+        ]
+        if domain_standard:
+            standard_hits = domain_standard
 
         # Also check if there are live commits after baseline and include their changed hunks
         diff_hits = [h for h in self.get_recent_diff_hits(limit=3) if h.get("is_live_diff")]
@@ -593,7 +628,7 @@ class LiveGitHistoryAdapter(FixtureHistoryAdapter):
             repo = git.Repo(str(repo_dir))
             for commit in list(repo.iter_commits(max_count=5)):
                 files = [str(f).replace("\\", "/") for f in commit.stats.files.keys()]
-                is_live = not commit.hexsha.startswith(_BASELINE_HEAD_SHA)
+                is_live = not _is_baseline_commit(commit.hexsha)
                 live_changes.append({
                     "change_id": f"CHG-LIVE-{commit.hexsha[:6].upper()}" if is_live else f"CHG-{commit.hexsha[:7]}",
                     "title": commit.message.strip(),
@@ -715,24 +750,46 @@ class LiveWriteAdapter(FixtureWriteAdapter):
     """
     Production WritePort connector:
       - Persists every approved issue and customer reply into `data/live/issues.json`
+      - Deterministic SHA-256-derived issue keys and idempotent deduplication
       - Optionally creates a real GitHub Issue via REST API if `GITHUB_TOKEN` is set.
     """
 
     def create_issue(self, jira_draft: dict[str, Any]) -> dict[str, Any]:
+        import hashlib
         import engine.audit as audit
 
         _ensure_live_dirs()
         inv_id = jira_draft.get("investigation_id", "unknown")
         title = jira_draft.get("title", "[TriagePilot] Verified Root Cause Issue")
         body = jira_draft.get("description", "")
+        report_hash = jira_draft.get("report_hash", "")
         labels = jira_draft.get("labels", ["triagepilot"])
+
+        digest = hashlib.sha256(f"live:{inv_id}:{report_hash}:{title}:{body}".encode("utf-8")).hexdigest()[:6].upper()
+        issue_key = f"ISS-{digest}"
+        issue_url = f"/api/live/issues/{issue_key}"
+        status = "live_persisted"
+
+        issues: list[dict[str, Any]] = []
+        if _LIVE_ISSUES_PATH.exists():
+            try:
+                issues = json.loads(_LIVE_ISSUES_PATH.read_text(encoding="utf-8"))
+                if not isinstance(issues, list):
+                    issues = []
+            except Exception:
+                issues = []
+
+        # Idempotency check: if an issue with this deterministic key already exists, return it without duplicating
+        for existing in issues:
+            if existing.get("issue_key") == issue_key:
+                return {
+                    "issue_key": existing["issue_key"],
+                    "url": existing.get("url", issue_url),
+                    "status": existing.get("status", status),
+                }
 
         gh_token = os.environ.get("GITHUB_TOKEN", "").strip()
         gh_repo = os.environ.get("GITHUB_REPO", "mahesh-mettireddy/TriagePilot").strip()
-
-        issue_key = f"ISS-{abs(hash(title + inv_id)) % 9000 + 1000}"
-        issue_url = f"/api/live/issues/{issue_key}"
-        status = "live_persisted"
 
         if gh_token and "/" in gh_repo:
             try:
@@ -755,17 +812,10 @@ class LiveWriteAdapter(FixtureWriteAdapter):
             except Exception as exc:
                 logger.warning("GitHub Issue API call fell back to local live ledger: %s", exc)
 
-        # Persist to data/live/issues.json so it is always inspectable
-        issues: list[dict[str, Any]] = []
-        if _LIVE_ISSUES_PATH.exists():
-            try:
-                issues = json.loads(_LIVE_ISSUES_PATH.read_text(encoding="utf-8"))
-            except Exception:
-                issues = []
-
         record = {
             "issue_key": issue_key,
             "investigation_id": inv_id,
+            "report_hash": report_hash,
             "title": title,
             "description": body,
             "repro_steps": jira_draft.get("repro_steps", []),
@@ -775,6 +825,7 @@ class LiveWriteAdapter(FixtureWriteAdapter):
             "status": status,
             "created_at": _utc_now(),
         }
+        issues = [i for i in issues if i.get("investigation_id") != inv_id or i.get("issue_key") != issue_key]
         issues.insert(0, record)
         _LIVE_ISSUES_PATH.write_text(json.dumps(issues[:100], indent=2), encoding="utf-8")
 
@@ -931,4 +982,115 @@ def reset_live_workspace(restore_demo_app_files: bool = False) -> dict[str, Any]
             shutil.rmtree(_LIVE_REPO_DIR, ignore_errors=True)
     ensure_live_git_repo()
     return sync_live_workspace()
+
+
+def list_live_editable_files() -> dict[str, Any]:
+    """
+    Return the allowlisted source files in `transfers-demo-app/app/` along with
+    their current content and the active Git workspace status (`short_sha`, diff, etc.).
+    """
+    sync_info = sync_live_workspace()
+    files_out: list[dict[str, Any]] = []
+    for rel_path, label in _ALLOWLISTED_LIVE_FILES.items():
+        target = _DEMO_APP_DIR / rel_path
+        content = ""
+        if target.exists():
+            content = target.read_text(encoding="utf-8", errors="replace")
+        files_out.append({
+            "path": rel_path,
+            "label": label,
+            "content": content,
+        })
+    return {
+        "files": files_out,
+        "git_workspace": sync_info,
+    }
+
+
+def update_and_commit_live_file(
+    file_path: str,
+    content: str,
+    commit_message: Optional[str] = None,
+) -> dict[str, Any]:
+    """
+    Write updated Python source to an allowlisted file in `transfers-demo-app/app/`,
+    sync it into `data/live/clientrepo`, and create a real Git commit with a 40-char SHA.
+    """
+    norm_path = file_path.strip().replace("\\", "/")
+    if norm_path not in _ALLOWLISTED_LIVE_FILES:
+        raise ValueError(f"File '{norm_path}' is not in the allowlisted live editable files.")
+
+    # Validate Python syntax before writing so a typo doesn't break the module loader
+    compile(content, norm_path, "exec")
+
+    target = _DEMO_APP_DIR / norm_path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(content, encoding="utf-8")
+
+    msg = (commit_message or "").strip() or f"feat(live): update {norm_path} in transfers-demo-app"
+    sync_info = sync_live_workspace(commit_message=msg)
+
+    # Also grab unified diff for the latest commit to display in the UI
+    diff_text = ""
+    try:
+        adapter = LiveGitCodeAdapter()
+        diff_text = adapter.git_diff(sync_info.get("head_sha", "HEAD"))
+    except Exception:
+        pass
+
+    # Automatically execute a live probe transaction against the newly committed code
+    # so data/live/logs.jsonl and data/live/records.json reflect the exact post-commit runtime state.
+    probe_amount = 100000.0
+    probe_hour = 10
+    if "cutoff" in norm_path:
+        probe_amount = 45000.0
+        probe_hour = 16
+    elif "calculator" in norm_path:
+        probe_amount = 803.40
+        probe_hour = 10
+    elif "sms" in norm_path:
+        probe_amount = 25000.0
+        probe_hour = 10
+
+    live_tx = execute_live_demo_transaction(
+        amount=probe_amount,
+        transfer_type="same_day",
+        tier="standard",
+        simulate_utc_hour=probe_hour,
+    )
+    short_sha = sync_info.get("short_sha", "HEAD")
+    txn_id = live_tx.get("transfer_id", "TXN-LIVE")
+    if not live_tx.get("ok"):
+        suggested_ticket = (
+            f"Customer transfer {txn_id} for INR {probe_amount:,.2f} from account 918273645501 "
+            f"failed after commit @{short_sha} in {norm_path} ('{msg}') with "
+            f"{live_tx.get('error_type')}: '{live_tx.get('error_message')}'. "
+            f"Please investigate the root cause across live logs, ledger state, and recent commits."
+        )
+    else:
+        fee = float(live_tx.get("fee", 0.0))
+        expected_fee = round(probe_amount * 0.0125, 2)
+        if abs(fee - expected_fee) >= 0.01:
+            suggested_ticket = (
+                f"Customer reported incorrect fee deduction on transfer {txn_id} (account 918273645501) "
+                f"after commit @{short_sha} in {norm_path}: principal INR {probe_amount:,.2f} was charged "
+                f"fee INR {fee:,.2f} instead of expected INR {expected_fee:,.2f}."
+            )
+        else:
+            suggested_ticket = (
+                f"Live developer commit @{short_sha} in {norm_path} ('{msg}') verified against "
+                f"transfer {txn_id} (INR {probe_amount:,.2f} COMPLETED, fee INR {fee:,.2f}). "
+                f"Please verify the live Git diff, runbook compliance, and runtime behavior."
+            )
+
+    return {
+        "ok": True,
+        "path": norm_path,
+        "commit_message": msg,
+        "git_workspace": sync_info,
+        "diff": diff_text,
+        "live_transaction": live_tx,
+        "suggested_ticket": suggested_ticket,
+    }
+
 

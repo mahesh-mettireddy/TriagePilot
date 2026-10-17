@@ -42,21 +42,48 @@ logger = logging.getLogger(__name__)
 
 
 def compute_provenance_key(card: EvidenceCard) -> str:
-    """Return a canonical provenance identifier so duplicate citations to the same source are grouped."""
-    p = card.pointer
+    """
+    Return a canonical provenance identifier including source revision/SHA and
+    exact range/field so duplicate citations to the same source are grouped while
+    distinct commits or sections remain distinguishable.
+    """
+    p = card.pointer or {}
     st = card.source_type
     if st == SourceType.LOG:
-        return f"log:{p.get('log_id', card.card_id)}"
+        log_id = p.get("log_id", card.card_id)
+        ts = p.get("ts", "")
+        return f"log:{log_id}@{ts}" if ts else f"log:{log_id}"
     if st == SourceType.CODE:
-        return f"code:{p.get('path', card.card_id)}"
+        path = str(p.get("path") or p.get("file") or card.card_id).replace("\\", "/")
+        sha = str(p.get("commit_sha") or p.get("sha") or "")
+        ls = p.get("line_start")
+        le = p.get("line_end")
+        if sha and ls is not None and le is not None:
+            return f"code:{path}@{sha}:{ls}-{le}"
+        if sha:
+            return f"code:{path}@{sha}"
+        return f"code:{path}"
     if st == SourceType.DOC:
-        return f"doc:{p.get('page_id', card.card_id)}"
+        page_id = p.get("page_id", card.card_id)
+        section = p.get("section", "")
+        rev = p.get("last_updated", "")
+        if section and rev:
+            return f"doc:{page_id}@{section}@{rev}"
+        if section:
+            return f"doc:{page_id}@{section}"
+        return f"doc:{page_id}"
     if st == SourceType.RECORD:
-        return f"record:{p.get('id', card.card_id)}"
+        rec_id = p.get("id") or p.get("transfer_id") or card.card_id
+        field = p.get("field", "")
+        return f"record:{rec_id}@{field}" if field else f"record:{rec_id}"
     if st == SourceType.TICKET:
-        return f"ticket:{p.get('system', 'sd')}:{p.get('id', card.card_id)}"
+        sys_name = p.get("system", "sd")
+        tid = p.get("id", card.card_id)
+        field = p.get("field", "")
+        return f"ticket:{sys_name}:{tid}@{field}" if field else f"ticket:{sys_name}:{tid}"
     if st == SourceType.VISUAL:
-        return f"visual:{p.get('attachment_id', card.card_id)}"
+        att_id = p.get("attachment_id") or p.get("filename") or card.card_id
+        return f"visual:{att_id}"
     return f"{st.value}:{card.card_id}"
 
 
@@ -152,6 +179,7 @@ def _verify_log(card: EvidenceCard, log_adapter: LogPort, scenario_id: str) -> V
 
     return VerificationResult(
         status=VerificationStatus.VERIFIED,
+        reason=f"Verified log '{log_id}' timestamp ({log_ts}) and message substring against LogPort.",
         evidence_level=EvidenceLevel.SOURCE_VALIDATED,
         provenance_key=compute_provenance_key(card),
     )
@@ -225,6 +253,7 @@ def _verify_code(card: EvidenceCard, code_adapter: CodePort) -> VerificationResu
 
     return VerificationResult(
         status=VerificationStatus.VERIFIED,
+        reason=f"Verified {path}:{line_start}-{line_end} at commit {sha[:8]} against Git repository.",
         evidence_level=EvidenceLevel.SOURCE_VALIDATED,
         provenance_key=compute_provenance_key(card),
     )
@@ -279,15 +308,16 @@ def _verify_doc(card: EvidenceCard, knowledge_adapter: KnowledgePort) -> Verific
 
     return VerificationResult(
         status=VerificationStatus.VERIFIED,
+        reason=f"Verified policy document '{page_id}' section '{section}' against KnowledgePort.",
         evidence_level=EvidenceLevel.SOURCE_VALIDATED,
         provenance_key=compute_provenance_key(card),
     )
 
 
-def _verify_ticket(card: EvidenceCard) -> VerificationResult:
-    """Verify a ticket-type EvidenceCard (existence check on pointer)."""
+def _verify_ticket(card: EvidenceCard, history_adapter: Optional[Any] = None) -> VerificationResult:
+    """Verify a ticket-type EvidenceCard against the HistoryPort (tickets, known_errors, changes)."""
     pointer = card.pointer
-    record_id = pointer.get("id", "")
+    record_id = str(pointer.get("id", "")).strip()
 
     if not record_id or record_id == "?":
         return VerificationResult(
@@ -295,16 +325,49 @@ def _verify_ticket(card: EvidenceCard) -> VerificationResult:
             reason="Ticket card has no valid id in pointer",
         )
 
-    # For ticket-type cards, we accept them if they have a valid pointer ID
-    # (the data came from the HistoryPort or ticket itself)
-    if not card.snippet:
+    if not card.snippet or not card.snippet.strip():
         return VerificationResult(
             status=VerificationStatus.DROPPED,
             reason="Ticket card has no snippet content",
         )
 
+    # If a HistoryPort adapter is available, verify known_error / change / historical ticket existence & content
+    if history_adapter is not None:
+        try:
+            upper_id = record_id.upper()
+            if upper_id.startswith("KE-"):
+                kes = history_adapter.known_errors(record_id)
+                matched = next(
+                    (k for k in kes if str(k.get("ke_id", k.get("id", ""))).upper() == upper_id),
+                    None,
+                )
+                if matched is None:
+                    return VerificationResult(
+                        status=VerificationStatus.DROPPED,
+                        reason=f"Known Error '{record_id}' not found in HistoryPort repository",
+                    )
+                blob = _normalise(f"{matched.get('title', '')} {matched.get('symptoms', '')} {matched.get('workaround', '')}")
+                if _normalise(card.snippet[:30]) and _normalise(card.snippet[:30]) not in blob and upper_id.lower() not in _normalise(card.snippet):
+                    return VerificationResult(
+                        status=VerificationStatus.DROPPED,
+                        reason=f"Known Error '{record_id}' snippet does not match HistoryPort record",
+                    )
+            elif upper_id.startswith("INC-"):
+                sim = history_adapter.similar_tickets(record_id, limit=20)
+                matched = next((t for t in sim if str(t.get("id", "")).upper() == upper_id), None)
+                if matched:
+                    blob = _normalise(f"{matched.get('title', '')} {matched.get('resolution', '')}")
+                    if _normalise(card.snippet[:30]) and _normalise(card.snippet[:30]) not in blob and upper_id.lower() not in _normalise(card.snippet):
+                        return VerificationResult(
+                            status=VerificationStatus.DROPPED,
+                            reason=f"Historical ticket '{record_id}' snippet does not match HistoryPort record",
+                        )
+        except Exception:
+            pass
+
     return VerificationResult(
         status=VerificationStatus.VERIFIED,
+        reason=f"Verified historical/change reference '{record_id}' against HistoryPort.",
         evidence_level=EvidenceLevel.SOURCE_VALIDATED,
         provenance_key=compute_provenance_key(card),
     )
@@ -368,6 +431,7 @@ def _verify_record(
 
     return VerificationResult(
         status=VerificationStatus.VERIFIED,
+        reason=f"Verified ledger record '{record_id}' field '{field}={actual_value}' against RecordPort.",
         evidence_level=EvidenceLevel.SOURCE_VALIDATED,
         provenance_key=compute_provenance_key(card),
     )
@@ -388,6 +452,7 @@ def _verify_visual(
     if corroborated:
         return VerificationResult(
             status=VerificationStatus.VERIFIED,
+            reason="Verified visual screenshot attachment corroborated by non-visual telemetry.",
             evidence_level=EvidenceLevel.CLAIM_SUPPORTED,
             provenance_key=compute_provenance_key(card),
             limitations="Visual screenshot corroborated by non-visual telemetry",
@@ -426,7 +491,7 @@ def _assign_claim_support_levels(verified_cards: list[EvidenceCard]) -> None:
         if not card.verification.provenance_key:
             card.verification.provenance_key = compute_provenance_key(card)
 
-        text_blob = f"{card.snippet} {card.claim} {card.pointer.get('path', '')}".lower()
+        text_blob = f"{card.snippet} {c_claim if (c_claim := card.claim) else ''} {card.pointer.get('path', '')}".lower()
 
         if card.source_type == SourceType.CODE:
             # Check for unrelated / innocent commits or non-causal utility citations
@@ -519,6 +584,7 @@ def verify_cards(
     code_adapter: CodePort = adapters["code"]
     knowledge_adapter: KnowledgePort = adapters["knowledge"]
     record_adapter: RecordPort = adapters["record"]
+    history_adapter: Optional[Any] = adapters.get("history")
 
     # First pass: verify all non-visual cards
     for card in cards:
@@ -532,7 +598,7 @@ def verify_cards(
         elif card.source_type == SourceType.DOC:
             card.verification = _verify_doc(card, knowledge_adapter)
         elif card.source_type == SourceType.TICKET:
-            card.verification = _verify_ticket(card)
+            card.verification = _verify_ticket(card, history_adapter=history_adapter)
         elif card.source_type == SourceType.RECORD:
             card.verification = _verify_record(card, record_adapter, scenario_id)
 

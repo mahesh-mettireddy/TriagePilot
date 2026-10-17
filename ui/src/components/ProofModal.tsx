@@ -63,8 +63,8 @@ export const ProofModal: React.FC<ProofModalProps> = ({ card, onClose }) => {
             </p>
           </div>
 
-          {/* Verification Reason (if dropped or verified) */}
-          {card.verification?.reason && (
+          {/* Verification Assertion, Evidentiary Tier & Provenance Key (Always visible for verified/dropped cards) */}
+          {(isVerified || isDropped || card.verification?.reason || card.verification?.evidence_level || card.verification?.provenance_key) && (
             <div className={`p-3 rounded-lg border ${isVerified ? 'bg-emerald-950/30 border-emerald-800/50 text-emerald-200' : 'bg-rose-950/30 border-rose-800/50 text-rose-200'}`}>
               <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
                 <span className="font-semibold text-xs uppercase tracking-wide">
@@ -76,10 +76,22 @@ export const ProofModal: React.FC<ProofModalProps> = ({ card, onClose }) => {
                   </span>
                 )}
               </div>
-              <p className="text-xs leading-normal">{card.verification.reason}</p>
+              <p className="text-xs leading-normal">
+                {card.verification?.reason || (isVerified ? 'Deterministically verified against pinned source adapter.' : 'Dropped by deterministic verifier.')}
+              </p>
               {card.verification?.provenance_key && (
                 <div className="mt-1.5 pt-1.5 border-t border-emerald-800/40 text-[11px] font-mono text-teal-300/90">
                   Deduplication Provenance Key: <span className="text-slate-200">{card.verification.provenance_key}</span>
+                </div>
+              )}
+              {(card.pointer?.sha || card.pointer?.line_start !== undefined) && (
+                <div className="mt-1.5 pt-1.5 border-t border-emerald-800/40 text-[11px] font-mono text-slate-300 flex flex-wrap gap-3">
+                  {card.pointer?.sha && (
+                    <span>Commit SHA: <strong className="text-teal-300">{String(card.pointer.sha)}</strong></span>
+                  )}
+                  {card.pointer?.line_start !== undefined && (
+                    <span>Line Range: <strong className="text-teal-300">L{String(card.pointer.line_start)}–L{String(card.pointer.line_end ?? card.pointer.line_start)}</strong></span>
+                  )}
                 </div>
               )}
               {card.verification?.limitations && (
@@ -115,7 +127,7 @@ export const ProofModal: React.FC<ProofModalProps> = ({ card, onClose }) => {
             <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
               <span className="text-[10px] uppercase text-slate-500 block">Observed At</span>
               <span className="text-xs text-slate-400 font-mono truncate block" title={card.observed_at}>
-                {card.observed_at ? new Date(card.observed_at).toLocaleTimeString() : 'N/A'}
+                {card.observed_at || 'N/A'}
               </span>
             </div>
           </div>

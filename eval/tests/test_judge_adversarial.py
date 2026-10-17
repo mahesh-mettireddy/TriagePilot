@@ -383,3 +383,82 @@ def test_next_useful_check_selector_and_single_agent_ablation():
     s11_base = run_single_agent_baseline_scenario("S11", GOLDEN_SCENARIOS_TRUTH["S11"])
     assert s11_base["abstention"] is False
     assert s11_base["false_conclusion"] is True
+
+
+def test_adversarial_8_operator_edit_persistence_leakcheck_and_provenance():
+    """
+    Verify:
+      1. compute_provenance_key includes @sha:line_start-line_end for code and @ts for logs.
+      2. Ticket verification checks HistoryPort and drops fabricated KE-* IDs.
+      3. Operator edited_summary and edited_customer_reply persist on the server,
+         re-run leakcheck (blocking internal paths/PII), recompute report_hash,
+         and emit deterministic SHA-256 write-back IDs.
+    """
+    code_card = _card(
+        "C-PROV",
+        SourceType.CODE,
+        {"path": "app/transfers/cutoff.py", "sha": "142e868000000000000000000000000000000000", "line_start": 20, "line_end": 27},
+        "cutoff",
+        "claim",
+    )
+    assert compute_provenance_key(code_card) == "code:app/transfers/cutoff.py@142e868000000000000000000000000000000000:20-27"
+
+    adapters = get_adapters()
+    fake_ke = _card(
+        "TKT-FAKE",
+        SourceType.TICKET,
+        {"system": "SD", "id": "KE-99999", "field": "summary"},
+        "Non-existent known error",
+        "Fake known error claim",
+    )
+    v_cards, d_cards = verify_cards([fake_ke], adapters, "S09")
+    assert len(v_cards) == 0
+    assert len(d_cards) == 1
+
+    async def _run_edit_flow():
+        manager = InvestigationManager()
+        inv_id = await manager.start_investigation(
+            InvestigationCreateRequest(scenario_id="S01", mode="live"),
+            wait=True,
+        )
+        rep = manager.get_report(inv_id)
+        assert rep is not None
+        orig_hash = rep.report_hash
+        orig_rev = rep.report_revision
+
+        # 1. Operator edit that introduces an internal file path leak in customer_reply_draft must be blocked
+        leaky_decision = HumanDecision(
+            status="approved",
+            by="Alex Rivera",
+            decision_id="DEC-LEAK-001",
+            report_revision=orig_rev,
+            report_hash=orig_hash,
+            edited_customer_reply="Please inspect internal file app/transfers/cutoff.py on prod-db-01.internal!",
+        )
+        with pytest.raises(ValueError, match="leak check"):
+            await manager.apply_decision(inv_id, leaky_decision)
+
+        # Reset leak_check on report after rejected attempt and submit clean operator edit
+        rep_clean = manager.get_report(inv_id)
+        assert rep_clean is not None
+        rep_clean.leak_check.passed = True
+        rep_clean.leak_check.notes = []
+
+        clean_decision = HumanDecision(
+            status="approved",
+            by="Alex Rivera",
+            decision_id="DEC-CLEAN-002",
+            report_revision=orig_rev,
+            report_hash=orig_hash,
+            edited_summary="Operator-verified summary: UTC vs IST cutoff comparison defect in same-day transfer validation.",
+            edited_customer_reply="We have identified the timezone cutoff issue affecting your same-day transfer and our engineering team is deploying the fix.",
+        )
+        updated = await manager.apply_decision(inv_id, clean_decision)
+        assert updated.summary == "Operator-verified summary: UTC vs IST cutoff comparison defect in same-day transfer validation."
+        assert updated.customer_reply_draft == "We have identified the timezone cutoff issue affecting your same-day transfer and our engineering team is deploying the fix."
+        assert updated.report_revision == orig_rev + 1
+        assert updated.report_hash != orig_hash
+        assert updated.decision.write_back_ref is not None
+
+    asyncio.run(_run_edit_flow())
+

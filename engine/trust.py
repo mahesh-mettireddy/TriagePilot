@@ -225,6 +225,8 @@ def compute_trust(
     dropped_cards: list[EvidenceCard],
     contradictions: list[Contradiction],
     hypotheses: Optional[list[Hypothesis]] = None,
+    human_context: Optional[Any] = None,
+    parent_trust: Optional[TrustSummary] = None,
 ) -> TrustSummary:
     """
     Compute the deterministic evidence-quality score, apply hard conclusion gates,
@@ -235,6 +237,8 @@ def compute_trust(
         dropped_cards:   Cards that failed verification.
         contradictions:  Contradictions found by the reconciler.
         hypotheses:      Optional list of hypotheses (for gap & support check).
+        human_context:   Optional HumanContext from an interactive HITL turn.
+        parent_trust:    Optional TrustSummary from the parent investigation turn.
 
     Returns:
         TrustSummary with score, band, policy_action, gate_outcome, gate_reasons,
@@ -340,6 +344,71 @@ def compute_trust(
             f"All {len(verified_cards)} verified cards share a single provenance source; independent corroboration required for HIGH conclusion"
         )
 
+    # Interactive HITL Gate & Live Git Commit Gate
+    live_diff_cards = [c for c in verified_cards if bool(c.pointer.get("is_live_diff"))]
+    has_completed_live_record = any(
+        c.source_type == SourceType.RECORD and "COMPLETED" in c.snippet.upper()
+        for c in verified_cards
+    )
+    has_behaviour_mismatch = any(c.kind == ContradictionKind.BEHAVIOUR_MISMATCH for c in contradictions)
+    interactive_prefix = ""
+
+    if live_diff_cards:
+        lc = live_diff_cards[0]
+        sha = str(lc.pointer.get("commit_sha") or lc.pointer.get("sha", ""))[:8]
+        c_msg = str(lc.pointer.get("commit_message") or lc.pointer.get("commit_msg") or "live code edit")
+        if has_completed_live_record and not has_behaviour_mismatch:
+            gate_reasons.insert(
+                0,
+                f"Live Git Commit @{sha} ('{c_msg}') verified: code fix resolved boundary defect & live probe COMPLETED with 0 contradictions",
+            )
+            interactive_prefix = (
+                f"Live Git Fix Verified (@{sha}: '{c_msg}') — boundary transfer COMPLETED with 0 policy contradictions. "
+            )
+        else:
+            gate_reasons.insert(
+                0,
+                f"Live Git Commit @{sha} ('{c_msg}') evaluated against live runtime telemetry",
+            )
+            interactive_prefix = f"Live Git Commit (@{sha}: '{c_msg}') inspected. "
+
+    if human_context is not None and getattr(human_context, "message", "").strip():
+        hc_src = (getattr(human_context, "source", "") or "DEV_STEER").upper()
+        hc_msg = getattr(human_context, "message", "").strip()
+        prior_desc = (
+            f"{parent_trust.score} ({parent_trust.band.value} / {parent_trust.policy_action.value})"
+            if parent_trust is not None
+            else "Turn 1"
+        )
+        if hc_src == "EVIDENCE_UPDATE":
+            if band == DecisionBand.HIGH:
+                band = DecisionBand.MEDIUM
+                policy = PolicyAction.CONCLUDE_WITH_CAVEAT
+                score = min(score, 0.64)
+            gate_reasons.insert(
+                0,
+                f"Interactive HITL ({hc_src}): Prior conclusion withdrawn ({prior_desc} -> {score} {band.value}); operator evidence ('{hc_msg[:80]}') requires premise verification",
+            )
+            interactive_prefix = (
+                f"Interactive Turn (EVIDENCE_UPDATE): Prior revision withdrawn ({prior_desc} -> {score} {band.value}) after operator supplied '{hc_msg[:75]}'. "
+            )
+        elif hc_src == "CLIENT_REPLY":
+            gate_reasons.insert(
+                0,
+                f"Interactive HITL ({hc_src}): Upgraded from {prior_desc} -> {score} ({band.value} / {policy.value}) after client clarification ('{hc_msg[:80]}')",
+            )
+            interactive_prefix = (
+                f"Interactive Turn (CLIENT_REPLY): Upgraded from {prior_desc} -> {score} ({band.value}) using client details ('{hc_msg[:75]}'). "
+            )
+        elif hc_src == "DEV_STEER":
+            gate_reasons.insert(
+                0,
+                f"Interactive HITL ({hc_src}): Swarm re-steered by engineer ('{hc_msg[:80]}') -> {score} ({band.value} / {policy.value})",
+            )
+            interactive_prefix = (
+                f"Interactive Turn (DEV_STEER): Engineer steer ('{hc_msg[:75]}') verified across {unique_prov_count} provenance sources. "
+            )
+
     # Determine explicit GateOutcome
     has_reproduced = any(
         c.verification.evidence_level == EvidenceLevel.CAUSE_REPRODUCED
@@ -378,7 +447,7 @@ def compute_trust(
         band=band,
         policy_action=policy,
         components=components,
-        rationale=". ".join(rationale_parts),
+        rationale=interactive_prefix + ". ".join(rationale_parts),
         gate_outcome=gate_outcome,
         gate_reasons=gate_reasons,
     )

@@ -201,6 +201,8 @@ export interface HumanDecision {
   by?: string;
   reason?: string;
   edits_diff?: string;
+  edited_summary?: string;
+  edited_customer_reply?: string;
   write_back_ref?: string;
   report_revision?: number;
   report_hash?: string;

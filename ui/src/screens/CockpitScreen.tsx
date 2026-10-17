@@ -12,6 +12,9 @@ import {
   subscribeToEvents,
   getConnectorsStatus,
   syncLiveRepo,
+  getLiveEditableFiles,
+  commitLiveFileEdit,
+  resetLiveRepo,
   triggerLiveTransaction,
   sendA2ATask,
 } from '../api';
@@ -81,8 +84,16 @@ export const CockpitScreen: React.FC = () => {
   const [inspectorTab, setInspectorTab] = useState<'swarm' | 'trace' | 'models'>('swarm');
   const [showAllTenStages, setShowAllTenStages] = useState<boolean>(false);
 
-  // Live Service Connector state
+  // Live Service Connector & In-Browser Code Studio state
   const [liveStatus, setLiveStatus] = useState<Record<string, any> | null>(null);
+  const [liveFiles, setLiveFiles] = useState<Array<{ path: string; label: string; content: string }>>([]);
+  const [selectedLiveFile, setSelectedLiveFile] = useState<string>('app/limits/daily_limit.py');
+  const [liveCodeContent, setLiveCodeContent] = useState<string>('');
+  const [liveCommitMsg, setLiveCommitMsg] = useState<string>('fix(limits): change >= to > in daily_limit.py boundary check');
+  const [isCodeStudioOpen, setIsCodeStudioOpen] = useState<boolean>(true);
+  const [isCommittingCode, setIsCommittingCode] = useState<boolean>(false);
+  const [liveCommitResult, setLiveCommitResult] = useState<Record<string, any> | null>(null);
+  const [liveCommitError, setLiveCommitError] = useState<string | null>(null);
   const [liveAmount, setLiveAmount] = useState<string>('100000');
   const [liveWindow, setLiveWindow] = useState<'10' | '16'>('10');
   const [liveTxResult, setLiveTxResult] = useState<Record<string, any> | null>(null);
@@ -90,18 +101,20 @@ export const CockpitScreen: React.FC = () => {
   const [isSyncingRepo, setIsSyncingRepo] = useState(false);
   const [a2aStatusBadge, setA2aStatusBadge] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (isInvestigating) {
-      setInspectorTab('trace');
-    } else if (report) {
-      setInspectorTab('swarm');
-    }
-  }, [isInvestigating, Boolean(report)]);
-
   const refreshLiveStatus = async () => {
     try {
-      const st = await getConnectorsStatus();
-      setLiveStatus(st);
+      const [st, filesResp] = await Promise.all([
+        getConnectorsStatus().catch(() => null),
+        getLiveEditableFiles().catch(() => null),
+      ]);
+      if (st) setLiveStatus(st);
+      if (filesResp && filesResp.files) {
+        setLiveFiles(filesResp.files);
+        const current = filesResp.files.find((f) => f.path === selectedLiveFile) || filesResp.files[0];
+        if (current && !liveCodeContent) {
+          setLiveCodeContent(current.content);
+        }
+      }
     } catch {
       // Non-blocking
     }
@@ -178,7 +191,7 @@ export const CockpitScreen: React.FC = () => {
     await refreshLiveStatus();
     if (!ticketText || selectedScenario?.ticket_text === ticketText) {
       setTicketText(
-        'Customer transfer for INR 1,00,000.00 from account 918273645501 was rejected or miscalculated after the latest service update. Please verify live telemetry, ledger snapshot, and recent repository commits.'
+        'Customer transfer for INR 1,00,000.00 from account 918273645501 was rejected with DailyLimitExceededException after the latest commit. Please verify live telemetry, ledger snapshot, and recent repository commits.'
       );
     }
   };
@@ -188,6 +201,79 @@ export const CockpitScreen: React.FC = () => {
     setTicketText(
       'Same-day corporate transfer TXN-1009 for INR 45,000 from account 123456789012 failed at 4:05 PM IST with CUTOFF_EXCEEDED.'
     );
+  };
+
+  const handleSelectLiveFile = (path: string) => {
+    setSelectedLiveFile(path);
+    setLiveCommitError(null);
+    const found = liveFiles.find((f) => f.path === path);
+    if (found) {
+      setLiveCodeContent(found.content);
+    }
+    if (path.includes('daily_limit')) {
+      setLiveCommitMsg('bug(limits): enforce >= boundary check on DAILY_TRANSFER_LIMIT');
+      setLiveAmount('100000');
+      setLiveWindow('10');
+    } else if (path.includes('cutoff')) {
+      setLiveCommitMsg('bug(cutoff): evaluate datetime.utcnow().hour >= 16 without IST conversion');
+      setLiveAmount('45000');
+      setLiveWindow('16');
+    } else if (path.includes('calculator')) {
+      setLiveCommitMsg('bug(fees): use binary float round(amount * rate, 2) on fee calculation');
+      setLiveAmount('803.40');
+      setLiveWindow('10');
+    } else {
+      setLiveCommitMsg(`feat(live): update ${path} in transfers-demo-app`);
+    }
+  };
+
+  const handleCommitLiveCode = async () => {
+    setIsCommittingCode(true);
+    setLiveCommitError(null);
+    try {
+      const res = await commitLiveFileEdit({
+        path: selectedLiveFile,
+        content: liveCodeContent,
+        commit_message: liveCommitMsg,
+      });
+      setLiveCommitResult(res);
+      if (res?.live_transaction) {
+        setLiveTxResult(res.live_transaction);
+      }
+      const shortSha = res?.git_workspace?.short_sha || 'HEAD';
+      const diffLines = String(res?.diff || '')
+        .split('\n')
+        .filter((l) => (l.startsWith('+') && !l.startsWith('+++')) || (l.startsWith('-') && !l.startsWith('---')))
+        .slice(0, 4)
+        .join(' | ');
+      setTicketText(
+        res?.suggested_ticket ||
+          `Live developer commit @${shortSha} in ${selectedLiveFile} ("${liveCommitMsg}"): ${diffLines || 'code modified'}. Please verify the live Git diff, runbook compliance, and runtime behavior.`
+      );
+      await refreshLiveStatus();
+    } catch (err: any) {
+      setLiveCommitError(err?.message || 'Failed to commit live code edit');
+    } finally {
+      setIsCommittingCode(false);
+    }
+  };
+
+  const handleResetLiveWorkspace = async () => {
+    setIsSyncingRepo(true);
+    setLiveCommitError(null);
+    try {
+      await resetLiveRepo();
+      setLiveCommitResult(null);
+      const filesResp = await getLiveEditableFiles();
+      setLiveFiles(filesResp.files || []);
+      const cur = (filesResp.files || []).find((f) => f.path === selectedLiveFile) || filesResp.files?.[0];
+      if (cur) setLiveCodeContent(cur.content);
+      await refreshLiveStatus();
+    } catch (err) {
+      console.error('Failed to reset live repo', err);
+    } finally {
+      setIsSyncingRepo(false);
+    }
   };
 
   const handleSyncLiveRepo = async () => {
@@ -202,20 +288,33 @@ export const CockpitScreen: React.FC = () => {
     }
   };
 
-  const handleTriggerLiveService = async () => {
+  const handleTriggerLiveService = async (
+    overrideAmount?: string,
+    overrideWindow?: '10' | '16',
+    autoInvestigate: boolean = false
+  ) => {
+    const amtStr = overrideAmount ?? liveAmount;
+    const winStr = overrideWindow ?? liveWindow;
+    if (overrideAmount !== undefined) setLiveAmount(overrideAmount);
+    if (overrideWindow !== undefined) setLiveWindow(overrideWindow);
+
     setIsTriggeringLive(true);
     try {
       const res = await triggerLiveTransaction({
-        amount: parseFloat(liveAmount.replace(/,/g, '')) || 100000,
+        amount: parseFloat(amtStr.replace(/,/g, '')) || 100000,
         transfer_type: 'same_day',
         tier: 'standard',
-        simulate_utc_hour: parseInt(liveWindow, 10),
+        simulate_utc_hour: parseInt(winStr, 10),
       });
       setLiveTxResult(res);
+      const nextTicket = res.suggested_ticket || ticketText;
       if (res.suggested_ticket) {
         setTicketText(res.suggested_ticket);
       }
       await refreshLiveStatus();
+      if (autoInvestigate && nextTicket) {
+        await handleStartInvestigation(undefined, nextTicket, 'LIVE');
+      }
     } catch (err) {
       console.error('Failed to execute live transaction', err);
     } finally {
@@ -235,7 +334,11 @@ export const CockpitScreen: React.FC = () => {
     };
   }, [ticketText]);
 
-  const handleStartInvestigation = async (humanContext?: any) => {
+  const handleStartInvestigation = async (
+    humanContext?: any,
+    overrideTicketText?: string,
+    overrideScenarioId?: string
+  ) => {
     setIsInvestigating(true);
     setEvents([]);
     setReport(null);
@@ -244,19 +347,21 @@ export const CockpitScreen: React.FC = () => {
     setA2aStatusBadge(null);
 
     const activeScenario =
-      intakeMode === 'live' ? 'LIVE' : intakeMode === 'custom' ? 'CUSTOM' : selectedScenarioId;
+      overrideScenarioId ||
+      (intakeMode === 'live' ? 'LIVE' : intakeMode === 'custom' ? 'CUSTOM' : selectedScenarioId);
+    const activeText = overrideTicketText ?? ticketText;
 
     try {
       const invId = await startInvestigation({
         scenario_id: activeScenario,
-        text: ticketText,
-        attachments: intakeMode === 'queue' ? selectedScenario?.attachments : [],
+        text: activeText,
+        attachments: intakeMode === 'queue' && !overrideScenarioId ? selectedScenario?.attachments : [],
         mode: 'live',
         human_context: humanContext,
       });
 
       setInvestigationId(invId);
-      if (intakeMode === 'live') refreshLiveStatus();
+      if (intakeMode === 'live' || activeScenario === 'LIVE') refreshLiveStatus();
 
       subscribeToEvents(
         invId,
@@ -271,7 +376,7 @@ export const CockpitScreen: React.FC = () => {
           try {
             const finalReport = await getInvestigationReport(invId);
             setReport(finalReport);
-            if (intakeMode === 'live') refreshLiveStatus();
+            if (intakeMode === 'live' || activeScenario === 'LIVE') refreshLiveStatus();
           } catch (e) {
             console.error('Error fetching final report', e);
           }
@@ -621,7 +726,7 @@ export const CockpitScreen: React.FC = () => {
         {/* ===================================================================
             COLUMN 1: STEP 1 — SELECT OR TRIGGER INCIDENT (lg:col-span-3)
            =================================================================== */}
-        <div className="lg:col-span-3 space-y-4">
+        <div className="lg:col-span-3 space-y-4 lg:sticky lg:top-20">
           <div className="bg-slate-900/90 border border-slate-800/90 rounded-xl p-4 shadow-xl space-y-3">
             {/* Step 1 Header */}
             <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
@@ -690,7 +795,7 @@ export const CockpitScreen: React.FC = () => {
                 </div>
 
                 {/* Sorted Ticket Queue List */}
-                <div className="space-y-1.5 max-h-[280px] overflow-y-auto pr-1">
+                <div className="space-y-1.5 max-h-[260px] overflow-y-auto pr-1">
                   {sortedScenarios.map((sc) => {
                     const isSelected = sc.id === selectedScenarioId && intakeMode === 'queue';
                     return (
@@ -733,79 +838,225 @@ export const CockpitScreen: React.FC = () => {
                 </div>
               </>
             ) : intakeMode === 'live' ? (
-              <div className="p-3 rounded-xl bg-slate-950/90 border border-teal-500/40 space-y-2.5 text-xs">
+              <div className="p-3 rounded-xl bg-slate-950/90 border border-teal-500/40 space-y-3 text-xs">
                 <div className="flex items-center justify-between">
                   <span className="font-bold text-teal-300 uppercase text-[10px] flex items-center gap-1.5">
                     <Radio className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
-                    Live Code &amp; Payment Bridge
+                    Live Code &amp; Git Sandbox
                   </span>
-                  <button
-                    onClick={handleSyncLiveRepo}
-                    disabled={isSyncingRepo}
-                    className="px-2 py-0.5 rounded bg-slate-900 hover:bg-slate-800 border border-slate-700 text-[10px] font-mono text-teal-300 flex items-center gap-1"
-                  >
-                    <RefreshCw className={`w-2.5 h-2.5 ${isSyncingRepo ? 'animate-spin' : ''}`} />
-                    Sync Code
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => setIsCodeStudioOpen((prev) => !prev)}
+                      className="px-2 py-0.5 rounded bg-teal-950/90 hover:bg-teal-900 border border-teal-500/40 text-[10px] font-mono text-teal-200 flex items-center gap-1 font-semibold"
+                    >
+                      <FileCode className="w-2.5 h-2.5" />
+                      {isCodeStudioOpen ? 'Hide Editor' : 'Edit & Commit Code'}
+                    </button>
+                    <button
+                      onClick={handleResetLiveWorkspace}
+                      disabled={isSyncingRepo}
+                      className="px-2 py-0.5 rounded bg-slate-900 hover:bg-slate-800 border border-slate-700 text-[10px] font-mono text-slate-300 flex items-center gap-1"
+                      title="Reset live repo to original baseline"
+                    >
+                      <RefreshCw className={`w-2.5 h-2.5 ${isSyncingRepo ? 'animate-spin' : ''}`} />
+                      Reset
+                    </button>
+                  </div>
                 </div>
 
-                {/* Live Git Workspace Status */}
+                {/* Live Git HEAD Status */}
                 <div className="p-2 rounded-lg bg-slate-900/90 border border-slate-800 space-y-1 font-mono text-[10px]">
-                  <div className="flex items-center justify-between">
-                    <span className="text-slate-400">Repo (`transfers-demo-app`):</span>
-                    <span className="text-teal-300 font-bold">
+                  <div className="flex items-center justify-between text-slate-300">
+                    <span className="text-slate-400">HEAD Commit:</span>
+                    <span className="text-teal-300 font-bold flex items-center gap-1">
+                      <GitCommit className="w-3 h-3" />
                       @{liveStatus?.git_workspace?.short_sha || '288c17a'}
                     </span>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-slate-400">Code Status:</span>
-                    {liveStatus?.git_workspace?.has_live_changes ? (
-                      <span className="px-1.5 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-500/40 font-bold">
-                        ⚡ LIVE CODE EDIT ({liveStatus.git_workspace.live_modified_files.length} file)
-                      </span>
-                    ) : (
-                      <span className="text-emerald-400">Clean Baseline</span>
-                    )}
+                  <div className="text-slate-400 truncate">
+                    {liveStatus?.git_workspace?.last_commit?.subject || ' transfers-demo-app live mirror'}
                   </div>
-                  {liveStatus?.git_workspace?.live_modified_files &&
-                    liveStatus.git_workspace.live_modified_files.length > 0 && (
-                      <div className="text-amber-300 truncate pt-0.5">
-                        Changed: {liveStatus.git_workspace.live_modified_files.join(', ')}
-                      </div>
-                    )}
+                  {liveStatus?.git_workspace?.has_live_changes && (
+                    <div className="text-emerald-300 font-bold">
+                      ⚡ Live Diff Active: {(liveStatus.git_workspace.modified_files || []).join(', ')}
+                    </div>
+                  )}
                 </div>
 
-                {/* Live Service Transaction Execution */}
-                <div className="space-y-1.5 pt-1 border-t border-slate-800/80">
+                {/* In-Browser Live Code Editor & Git Commit */}
+                {isCodeStudioOpen && (
+                  <div className="p-2.5 rounded-lg bg-slate-900 border border-teal-500/40 space-y-2">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold uppercase text-teal-300 block">
+                        1. Select File to Edit (`transfers-demo-app`):
+                      </label>
+                      <select
+                        value={selectedLiveFile}
+                        onChange={(e) => handleSelectLiveFile(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1.5 text-[11px] font-mono text-teal-200 focus:outline-none focus:border-teal-500"
+                      >
+                        {liveFiles.map((f) => (
+                          <option key={f.path} value={f.path}>
+                            {f.path} — {f.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between text-[10px] font-mono">
+                        <span className="text-slate-300 font-bold uppercase">2. Edit Python Source Code:</span>
+                        <span className="text-slate-500">AST Validated</span>
+                      </div>
+                      <textarea
+                        value={liveCodeContent}
+                        onChange={(e) => setLiveCodeContent(e.target.value)}
+                        rows={8}
+                        spellCheck={false}
+                        className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-[10px] font-mono text-emerald-200 leading-snug focus:outline-none focus:border-teal-500"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold uppercase text-slate-300 block">
+                        3. Git Commit Message:
+                      </label>
+                      <input
+                        type="text"
+                        value={liveCommitMsg}
+                        onChange={(e) => setLiveCommitMsg(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1 text-[10px] font-mono text-slate-200"
+                      />
+                    </div>
+
+                    {liveCommitError && (
+                      <div className="p-1.5 rounded bg-rose-950/90 border border-rose-500/40 text-[10px] font-mono text-rose-300">
+                        {liveCommitError}
+                      </div>
+                    )}
+
+                    <button
+                      onClick={handleCommitLiveCode}
+                      disabled={isCommittingCode}
+                      className="w-full py-1.5 px-2.5 rounded bg-teal-600 hover:bg-teal-500 text-white font-bold text-[11px] font-mono flex items-center justify-center gap-1.5 shadow"
+                    >
+                      <GitCommit className="w-3.5 h-3.5" />
+                      {isCommittingCode ? 'Committing to Live Git...' : 'Commit Edit to Live Git Repo'}
+                    </button>
+
+                    {liveCommitResult?.git_workspace && (
+                      <div className="p-2 rounded bg-emerald-950/70 border border-emerald-500/40 text-[10px] font-mono text-emerald-200 space-y-1">
+                        <div>
+                          ✓ Committed <strong className="text-white">@{liveCommitResult.git_workspace.short_sha}</strong> in{' '}
+                          <span className="text-teal-300">{selectedLiveFile}</span>
+                        </div>
+                        <button
+                          onClick={() => handleTriggerLiveService(liveAmount, liveWindow, true)}
+                          disabled={isTriggeringLive || isInvestigating}
+                          className="w-full mt-1 py-1 px-2 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] flex items-center justify-center gap-1 shadow"
+                        >
+                          <Zap className="w-3 h-3" />
+                          Execute Live Transfer &amp; Verify Commit Now →
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* 3 One-Click Live Bug Scenarios */}
+                <div className="space-y-1.5">
+                  <div className="text-[10px] font-bold uppercase text-slate-300">
+                    Or Trigger a 1-Click Live Bug Scenario:
+                  </div>
+                  <div className="grid grid-cols-1 gap-1.5">
+                    <button
+                      onClick={() => handleTriggerLiveService('100000', '10', true)}
+                      disabled={isTriggeringLive || isInvestigating}
+                      className="text-left p-2 rounded-lg bg-slate-900 hover:bg-teal-950/70 border border-slate-800 hover:border-teal-500/50 transition-all flex items-center justify-between gap-2"
+                    >
+                      <div>
+                        <div className="text-[11px] font-bold text-rose-300">
+                          🔴 Bug 1: Daily Limit Boundary (`&gt;=`)
+                        </div>
+                        <div className="text-[10px] font-mono text-slate-400">
+                          INR 1,00,000 → `daily_limit.py`
+                        </div>
+                      </div>
+                      <span className="px-2 py-1 rounded bg-teal-600/20 text-teal-300 border border-teal-500/30 font-mono text-[9px] font-bold shrink-0">
+                        Run Live →
+                      </span>
+                    </button>
+
+                    <button
+                      onClick={() => handleTriggerLiveService('45000', '16', true)}
+                      disabled={isTriggeringLive || isInvestigating}
+                      className="text-left p-2 rounded-lg bg-slate-900 hover:bg-teal-950/70 border border-slate-800 hover:border-teal-500/50 transition-all flex items-center justify-between gap-2"
+                    >
+                      <div>
+                        <div className="text-[11px] font-bold text-amber-300">
+                          🟠 Bug 2: Cutoff Timezone (`cutoff.py`)
+                        </div>
+                        <div className="text-[10px] font-mono text-slate-400">
+                          INR 45,000 @ 16:15 → `CutoffWindowClosedException`
+                        </div>
+                      </div>
+                      <span className="px-2 py-1 rounded bg-teal-600/20 text-teal-300 border border-teal-500/30 font-mono text-[9px] font-bold shrink-0">
+                        Run Live →
+                      </span>
+                    </button>
+
+                    <button
+                      onClick={() => handleTriggerLiveService('803.40', '10', true)}
+                      disabled={isTriggeringLive || isInvestigating}
+                      className="text-left p-2 rounded-lg bg-slate-900 hover:bg-teal-950/70 border border-slate-800 hover:border-teal-500/50 transition-all flex items-center justify-between gap-2"
+                    >
+                      <div>
+                        <div className="text-[11px] font-bold text-sky-300">
+                          🔵 Bug 3: Binary Float Fee (`calculator.py`)
+                        </div>
+                        <div className="text-[10px] font-mono text-slate-400">
+                          INR 803.40 → Charges 10.05 vs 10.04
+                        </div>
+                      </div>
+                      <span className="px-2 py-1 rounded bg-teal-600/20 text-teal-300 border border-teal-500/30 font-mono text-[9px] font-bold shrink-0">
+                        Run Live →
+                      </span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Custom Amount / Window Trigger */}
+                <div className="pt-1.5 border-t border-slate-800/80 space-y-1.5">
                   <div className="grid grid-cols-2 gap-1.5">
                     <div>
-                      <label className="text-[9px] font-mono text-slate-400 block mb-0.5">Amount (INR)</label>
+                      <label className="text-[9px] uppercase text-slate-400 block mb-0.5">Amount (INR)</label>
                       <input
-                        type="number"
+                        type="text"
                         value={liveAmount}
                         onChange={(e) => setLiveAmount(e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-[11px] font-mono text-slate-100"
+                        className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs font-mono text-slate-100"
                       />
                     </div>
                     <div>
-                      <label className="text-[9px] font-mono text-slate-400 block mb-0.5">Time Window</label>
+                      <label className="text-[9px] uppercase text-slate-400 block mb-0.5">Time Window</label>
                       <select
                         value={liveWindow}
                         onChange={(e) => setLiveWindow(e.target.value as '10' | '16')}
-                        className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-[11px] font-mono text-slate-100"
+                        className="w-full bg-slate-900 border border-slate-700 rounded px-1.5 py-1 text-xs font-mono text-slate-100"
                       >
-                        <option value="10">10:15 UTC (Open)</option>
-                        <option value="16">16:15 UTC (Cutoff)</option>
+                        <option value="10">10:15 (Open)</option>
+                        <option value="16">16:15 (Cutoff)</option>
                       </select>
                     </div>
                   </div>
+
                   <button
-                    onClick={handleTriggerLiveService}
-                    disabled={isTriggeringLive}
-                    className="w-full py-1.5 px-2.5 rounded-lg bg-slate-900 hover:bg-teal-950/80 border border-teal-500/40 text-teal-300 font-semibold text-[11px] flex items-center justify-center gap-1.5 transition-colors"
+                    onClick={() => handleTriggerLiveService(undefined, undefined, true)}
+                    disabled={isTriggeringLive || isInvestigating}
+                    className="w-full py-1.5 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-teal-300 border border-teal-500/30 font-bold text-[11px] font-mono flex items-center justify-center gap-1.5 transition-colors"
                   >
-                    <Zap className="w-3.5 h-3.5 text-amber-400" />
-                    {isTriggeringLive ? 'Running Live Payment...' : '1. Run Live Payment & Generate Ticket'}
+                    <Zap className="w-3.5 h-3.5" />
+                    {isTriggeringLive ? 'Executing Live Transfer...' : 'Execute Custom Transfer & Analyze'}
                   </button>
                 </div>
 
@@ -823,7 +1074,7 @@ export const CockpitScreen: React.FC = () => {
                         {liveTxResult.status}
                       </span>
                     </div>
-                    <div className="text-slate-400 truncate">
+                    <div className="text-slate-300 truncate">
                       {liveTxResult.error_message
                         ? `${liveTxResult.error_type}: ${liveTxResult.error_message}`
                         : `Fee Charged: INR ${Number(liveTxResult.fee || 0).toFixed(2)}`}
@@ -1358,8 +1609,8 @@ export const CockpitScreen: React.FC = () => {
                         )}
                         {report.probable_root_cause.supporting_card_ids?.length > 0 && (
                           <div className="text-[11px] flex items-center justify-between gap-2">
-                            <span className="text-slate-400">Proof Citations:</span>
-                            <span className="text-slate-200">
+                            <span className="text-slate-400">Proof Cards:</span>
+                            <span className="text-slate-200 font-semibold">
                               {report.probable_root_cause.supporting_card_ids.join(', ')}
                             </span>
                           </div>
@@ -1367,18 +1618,9 @@ export const CockpitScreen: React.FC = () => {
                       </div>
                     </>
                   ) : (
-                    <p className="text-xs text-slate-200 leading-relaxed bg-slate-950 p-3 rounded-lg border border-slate-800 whitespace-pre-wrap">
+                    <p className="text-xs text-slate-200 leading-relaxed bg-slate-950 p-3 rounded-lg border border-slate-800">
                       {report.summary}
                     </p>
-                  )}
-
-                  {report.workaround && (
-                    <div className="p-2.5 rounded-lg bg-teal-950/40 border border-teal-500/30 text-[11px] text-teal-200">
-                      <strong className="uppercase text-[10px] text-teal-400 block mb-0.5">
-                        Recommended Fix / Workaround:
-                      </strong>
-                      {report.workaround}
-                    </div>
                   )}
 
                   {report.kb_gap && (

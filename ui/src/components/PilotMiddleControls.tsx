@@ -92,6 +92,8 @@ export const PilotMiddleControls: React.FC<PilotMiddleControlsProps> = ({
         by: approverName,
         reason: editMode ? 'Operator edited summary and customer draft' : 'Verified by Principal SRE reviewer',
         edits_diff: editMode ? `Summary updated: "${editedSummary.slice(0, 60)}..."` : undefined,
+        edited_summary: editMode ? editedSummary : undefined,
+        edited_customer_reply: editMode ? editedReply : undefined,
         report_revision: report?.report_revision,
         report_hash: report?.report_hash,
         decision_id:

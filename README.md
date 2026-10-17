@@ -4,12 +4,13 @@
 
 [![Live Cloud Run Service](https://img.shields.io/badge/Live%20Platform-Cloud%20Run%20Active-success?style=for-the-badge&logo=googlecloud)](https://triagepilot-ywgad5nv3a-uc.a.run.app)
 [![Live Benchmark](https://img.shields.io/badge/Live%20Vertex%20AI%20Eval-8%2F8%20Passed%20(100%25)-10b981?style=for-the-badge&logo=googlecloud)](https://triagepilot-ywgad5nv3a-uc.a.run.app)
-[![Verification Suite](https://img.shields.io/badge/Pytest%20Suite-204%20Passing-emerald?style=for-the-badge&logo=pytest)](eval/tests/)
+[![Verification Suite](https://img.shields.io/badge/Pytest%20Suite-205%20Passing-emerald?style=for-the-badge&logo=pytest)](eval/tests/)
 [![AI Core](https://img.shields.io/badge/Vertex%20AI-Gemini%202.5%20Pro%20%2B%20Flash%20%2B%20Vision-4285F4?style=for-the-badge&logo=googlecloud)](engine/)
 [![Agent Interop](https://img.shields.io/badge/Multi--Agent-Google%20ADK%20%2B%20A2A%20v0.2-teal?style=for-the-badge&logo=google)](api/a2a.py)
 [![Audit Integrity](https://img.shields.io/badge/Audit%20Ledger-SHA--256%20Hash%20Chain-teal?style=for-the-badge)](https://triagepilot-ywgad5nv3a-uc.a.run.app/api/audit/verify)
 
 - **Live Production URL (Google Cloud Run):** [https://triagepilot-ywgad5nv3a-uc.a.run.app](https://triagepilot-ywgad5nv3a-uc.a.run.app)
+- **Production Readiness, Codeflow & 3-Minute Pitch Playbook:** [`READINESS.md`](READINESS.md)
 - **Interactive 3-Minute Demo Script:** [`DEMO_WALKTHROUGH.md`](DEMO_WALKTHROUGH.md)
 - **Full Architecture & Technical Specification:** [`ARCHITECTURE_AND_SPEC.md`](ARCHITECTURE_AND_SPEC.md)
 - **Google A2A Agent Card (`v0.2`):** [`GET /.well-known/agent.json`](https://triagepilot-ywgad5nv3a-uc.a.run.app/.well-known/agent.json)
@@ -28,11 +29,11 @@ Standard LLM chatbots fail in production support because they hallucinate file p
 **TriagePilot™** moves from *plausible diagnosis to a defensible next decision*. It cross-examines customer claims against operational logs, pinned Git source code, masked ledger snapshots, visual error screenshots, and domain runbooks—**verifying every citation deterministically in Python and grading its evidentiary truth level** before selecting an allowlisted next check, synthesizing a root-cause verdict, and gating write-back behind revision-bound human approval.
 
 ### 🏆 Key Architectural Innovations
-1. **True Live Repository & Telemetry Connectors ([`engine/adapters/live_adapter.py`](engine/adapters/live_adapter.py)):** Dynamically syncs developer edits in [`transfers-demo-app/app/`](transfers-demo-app/app) into an isolated Git mirror, executes live payment requests without server restarts, emits structured JSONL logs + PII-masked ledger records, and verifies exact modified line numbers and 40-character Git SHAs.
-2. **Google ADK `ParallelAgent` Specialist Swarm ([`engine/adk_orchestration.py`](engine/adk_orchestration.py)):** Registers 5 domain specialists (`HistoryAgent`, `KnowledgeAgent`, `LogsAgent`, `CodeAgent`, `RecordAgent`) under `TriagePilotSpecialistSwarm` wrapped in a shared 12-call `ToolBudget`, dynamically pruning unnecessary specialists per ticket class and executing active specialists concurrently via `asyncio.gather`.
+1. **True Live Repository, In-Browser Live Code Studio & Auto-Probe Telemetry ([`engine/adapters/live_adapter.py`](engine/adapters/live_adapter.py)):** Lets developers edit [`transfers-demo-app/app/`](transfers-demo-app/app) in the **Live Code Studio** (or IDE), commits into an isolated Git mirror (`data/live/clientrepo`) with a real 40-char SHA, automatically runs a live probe transaction, emits structured JSONL logs + PII-masked ledger records, and verifies `[LIVE GIT FIX VERIFIED]` (`CHK-LIVE-FIX-VERIFIED`) when a fix resolves the runtime bug.
+2. **Google ADK `ParallelAgent` Topology & Deterministic Parallel Specialist Runner ([`engine/adk_orchestration.py`](engine/adk_orchestration.py)):** Registers 5 domain specialists (`HistoryAgent`, `KnowledgeAgent`, `LogsAgent`, `CodeAgent`, `RecordAgent`) under a Google ADK `ParallelAgent` topology (`TriagePilotSpecialistSwarm`) wrapped in a shared 12-call `ToolBudget`, dynamically pruning unnecessary specialists per ticket class and executing active specialists concurrently via the deterministic Python runner (`asyncio.gather`) so every tool call is strictly budgeted and auditable.
 3. **Google A2A (Agent2Agent) Protocol v0.2 ([`api/a2a.py`](api/a2a.py)):** Publishes a standards-compliant Agent Card at `GET /.well-known/agent.json` and accepts JSON-RPC 2.0 task delegations at `POST /a2a` (`tasks/send`, `tasks/get`), returning verified evidence artifacts.
 4. **Three-Tier Evidentiary Truth Labels & Provenance-Deduplicated Trust Gate ([`engine/verifier.py`](engine/verifier.py), [`engine/trust.py`](engine/trust.py)):** Drops any unverified model citation on the spot, classifies every verified card into **`SOURCE_VALIDATED`**, **`CLAIM_SUPPORTED`**, or **`CAUSE_REPRODUCED`** (with explicit `limitations`), deduplicates identical source pointers by `provenance_key`, and enforces 4 hard conclusion gates (`REPRODUCED_IN_FIXTURE`, `SUPPORTED_HYPOTHESIS`, `NEED_EVIDENCE`, `BLOCKED`) with **Principled Abstention** when $T < 0.45$.
-5. **Allowlisted "Next Useful Check" Decision Selector & Contradictory Evidence Withdrawal ([`engine/next_check.py`](engine/next_check.py), [`engine/orchestrator.py`](engine/orchestrator.py)):** Selects the highest-leverage diagnostic check (`NextCheck`) from a closed allowlist and supports live contradictory evidence updates (`EVIDENCE_UPDATE`) that withdraw superseded conclusions (`WithdrawnConclusion`), increment `report_revision`, invalidate stale approvals on superseded parent investigations, and seal every transition in a **Firestore SHA-256 hash chain**.
+5. **Interactive Multi-Turn HITL Loop, Allowlisted Next Check & Contradictory Evidence Withdrawal ([`engine/next_check.py`](engine/next_check.py), [`engine/orchestrator.py`](engine/orchestrator.py)):** Supports natural-language **`DEV_STEER`** (`CHK-STEER-DIRECTIVE-VERIFIED`), **`CLIENT_REPLY`** (resuming abstained investigations), and **`EVIDENCE_UPDATE`** (withdrawing superseded conclusions via `WithdrawnConclusion`, incrementing `report_revision`, invalidating stale approvals, and sealing every transition in a **Firestore SHA-256 hash chain**).
 
 ---
 
@@ -232,7 +233,7 @@ Or use the convenience scripts:
 
 ### 2. Run the Test & Benchmark Suites
 ```bash
-# Run all 204 backend unit, adversarial judge, ADK/A2A, Live Connector & integration tests
+# Run all 205 backend unit, adversarial judge, ADK/A2A, Live Connector & integration tests
 pytest -q
 
 # Run the 8-scenario automated evaluation & Single-Agent vs TriagePilot ablation benchmark

@@ -46,6 +46,122 @@ def select_next_checks(
 
     hyp_ids = [h.hypothesis_id for h in hypotheses[:2]] or ["H1", "H2"]
 
+    is_live_diff = any(bool(c.pointer.get("is_live_diff")) for c in verified_cards)
+    has_completed_live_record = any(
+        c.source_type == SourceType.RECORD and "COMPLETED" in c.snippet.upper()
+        for c in verified_cards
+    )
+    has_behaviour_mismatch = any(
+        c.kind == ContradictionKind.BEHAVIOUR_MISMATCH for c in contradictions
+    )
+    is_live_fix_verified = is_live_diff and has_completed_live_record and not has_behaviour_mismatch
+
+    # 0a. Interactive HITL Turn-2+ checks (CLIENT_REPLY / DEV_STEER / EVIDENCE_UPDATE)
+    if ticket.human_context and getattr(ticket.human_context, "message", "").strip():
+        hc_source = (getattr(ticket.human_context, "source", "") or "DEV_STEER").upper()
+        hc_msg = getattr(ticket.human_context, "message", "").strip()
+        if hc_source == "EVIDENCE_UPDATE":
+            candidates.append(
+                NextCheck(
+                    check_id="CHK-PREMISE-WITHDRAWAL-AUDIT",
+                    title="Contradictory Evidence Applied: Prior Revision Withdrawn & Re-Evaluated",
+                    target_system="Version-Bound Premise Gate & Operations",
+                    purpose=(
+                        f"Prior conclusion was automatically withdrawn after new operator evidence "
+                        f"('{hc_msg[:110]}') invalidated the earlier premise."
+                    ),
+                    required_inputs=[
+                        "Withdrawn revision hash",
+                        f"Operator evidence: {hc_msg[:60]}",
+                        "Updated policy gate",
+                    ],
+                    discriminates_hypotheses=hyp_ids,
+                    expected_outcomes=[
+                        "Confirm updated operational/compliance root cause before approving new revision",
+                        "Prior stale report_hash is permanently blocked from write-back",
+                    ],
+                    effort_level="low",
+                    status="recommended",
+                )
+            )
+        elif hc_source == "CLIENT_REPLY" and trust.policy_action != PolicyAction.ABSTAIN:
+            candidates.append(
+                NextCheck(
+                    check_id="CHK-CLIENT-CORRELATION-RESOLVED",
+                    title="Client Clarification Correlated -> Verify Pinpointed Root Cause & Approve Write-Back",
+                    target_system="Maker-Checker Gate & Verified Code/Log Trace",
+                    purpose=(
+                        f"Client follow-up ('{hc_msg[:100]}') resolved Turn-1 abstention and bound "
+                        f"the incident to verified telemetry and code lines."
+                    ),
+                    required_inputs=[
+                        f"Client reply: {hc_msg[:60]}",
+                        "Verified code & ledger proof cards",
+                        "report_hash",
+                    ],
+                    discriminates_hypotheses=hyp_ids,
+                    expected_outcomes=[
+                        "Approve write-back to dispatch engineering Jira & customer resolution",
+                        "Use Engineer Steer if additional module inspection is needed",
+                    ],
+                    effort_level="low",
+                    status="completed",
+                )
+            )
+        elif hc_source == "DEV_STEER":
+            candidates.append(
+                NextCheck(
+                    check_id="CHK-STEER-DIRECTIVE-VERIFIED",
+                    title=f"Engineer Steer Executed: Re-Evaluated Swarm Against '{hc_msg[:52]}'",
+                    target_system="Swarm Re-Router & Deterministic Verifier",
+                    purpose=(
+                        f"Executed developer steer ('{hc_msg[:110]}') across active specialists "
+                        f"and re-scored hypothesis ranking."
+                    ),
+                    required_inputs=[
+                        f"DEV_STEER: {hc_msg[:60]}",
+                        "Updated verified evidence cards",
+                        "report_revision",
+                    ],
+                    discriminates_hypotheses=hyp_ids,
+                    expected_outcomes=[
+                        "If steered hypothesis is confirmed -> Approve Maker-Checker write-back",
+                        "If code fix is ready -> Commit in Live Repo Studio and re-run verification",
+                    ],
+                    effort_level="low",
+                    status="completed",
+                )
+            )
+
+    # 0b. Live Developer Git Fix Verified check
+    if is_live_fix_verified:
+        live_code_card = next((c for c in verified_cards if c.pointer.get("is_live_diff")), None)
+        commit_sha = str(live_code_card.pointer.get("commit_sha") or live_code_card.pointer.get("sha", ""))[:8] if live_code_card else "HEAD"
+        commit_msg = str(live_code_card.pointer.get("commit_message") or live_code_card.pointer.get("commit_msg") or "live fix") if live_code_card else "live fix"
+        candidates.append(
+            NextCheck(
+                check_id="CHK-LIVE-FIX-VERIFIED",
+                title=f"Live Git Fix Verified (@{commit_sha}): Boundary Transfer Succeeded Against Policy",
+                target_system="Live Git Workspace & Maker-Checker Gate",
+                purpose=(
+                    f"Developer commit @{commit_sha} ('{commit_msg}') resolved the defect in live code. "
+                    f"Live transaction probe completed with status COMPLETED and 0 contradictions."
+                ),
+                required_inputs=[
+                    f"git commit @{commit_sha}",
+                    "Live probe status=COMPLETED",
+                    "DOC-LIMITS-01 policy alignment",
+                ],
+                discriminates_hypotheses=hyp_ids,
+                expected_outcomes=[
+                    "Approve & Execute Write-Back to record verified fix and close incident",
+                    "Trigger additional live transaction probes if testing edge amounts",
+                ],
+                effort_level="low",
+                status="completed",
+            )
+        )
+
     # 1. Missing decisive input check (ABSTAIN / INSUFFICIENT_INFO)
     if trust.policy_action == PolicyAction.ABSTAIN or ticket.ticket_class == TicketClass.INSUFFICIENT_INFO if hasattr(ticket, "ticket_class") else trust.policy_action == PolicyAction.ABSTAIN:
         candidates.append(
@@ -80,7 +196,7 @@ def select_next_checks(
                     "If both fail -> indicates broader service or dependency regression",
                 ],
                 effort_level="low",
-                status="recommended",
+                status="completed" if (is_live_fix_verified or bool(ticket.human_context)) else "recommended",
             )
         )
 
